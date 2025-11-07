@@ -1,2 +1,2 @@
 # SFHWorkflows.jl
-Simplified workflows using StarFormationHistories.jl for standard analyses
+[StarFormationHistories.jl](https://github.com/cgarling/StarFormationHistories.jl) contains highly modular components for measuring resolved star formation histories from high-precision color magnitude diagrams. This package provides standardized workflows for making these measurements that can be configured and ran from simple YAML configuration files.
