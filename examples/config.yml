@@ -1,0 +1,37 @@
+data:
+  path: /home/cgarling/Work/UVA/Projects/SFH/aquarius/data # Common path prefix to add to photometry_file and ast_file
+  photometry:
+      photometry_file: phot.dat # One column per filter, apparent magnitudes
+      filters: F475W, F814W # Filter name for each column in photometry_file, comma separated
+  ASTs:
+    # For two filters, ast_file has 4 columns with convention
+    # (inputmag1, inputmag2, (outmag1 - inputmag1), (outmag2 - inputmag2)
+    ast_file: fake.dat
+    badval: 99.999 # values of (out-in) columns that indicates a non-detection
+    minerr: 0.01   # minimum photometric error to allow in model
+    maxerr: 0.25   # maximum photometric error to allow in model
+  binning:
+    # range(a, b; length=c) gives uniform range from a to b with number of steps = c
+    ybins: range(20.5, 28.0; length=150)
+    xbins: range(-0.75, 2.5; length=75)
+    yfilter: F814W
+    xcolor: F475W, F814W
+
+imf:
+  # Valid models: Kroupa2001, Chabrier2001BPL, Chabrier2001LogNormal, Chabrier2003, Chabrier2003System, Salpeter1955
+    model: Kroupa2001
+    mmin: 0.08  # Minimum stellar mass
+    mmax: 100.0 # Maximum stellar mass
+
+binaries:
+  # Valid models: NoBinaries, RandomBinaryPairs
+  model: RandomBinaryPairs
+  binary_fraction: 0.4
+
+properties:
+  Av: 0.13466152995504851 # V-band extinction
+  distance_modulus: 24.95
+  Mstar: 2.6e6 # Stellar mass to set normalization of initial SFH guess; order-of-magnitude
+
+plotting:
+  diagnostics: true # Creates diagnostics.pdf showing derived error and completeness functions

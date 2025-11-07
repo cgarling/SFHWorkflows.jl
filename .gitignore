@@ -26,8 +26,8 @@ Manifest.toml
 # IPython notebook temporary files
 .ipynb_checkpoints
 
-# nbconvert generated static html in examples
 examples/*.html
+examples/*.pdf
 
 # Don't check in the release-notes.md file, this is auto-generated
 docs/src/release-notes.md
