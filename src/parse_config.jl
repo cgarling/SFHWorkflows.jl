@@ -1,6 +1,8 @@
 import YAML
 using InitialMassFunctions
 using StarFormationHistories: NoBinaries, RandomBinaryPairs
+using StellarTracks: PARSECLibrary, MISTLibrary, BaSTIv1Library, BaSTIv2Library
+import BolometricCorrections as BC
 
 strip_whitespace(s::AbstractString) = replace(s, r"\s+" => "")
 
@@ -43,7 +45,62 @@ function parse_binaries(dict)
     return binary_model
 end
 
+function parse_tracks(dict)
+    # Recursion: If this is top-level dict, call again with sub-dictionaries as argument 
+    if "stellartracks" ∈ keys(dict)
+        # return [parse_tracks(track) for track in dict["stellartracks"]]
+        st = dict["stellartracks"]
+        return [parse_tracks(st[key]) for key in keys(st)]
+    end
+    name = lowercase(dict["name"])
+    if name == "parsec"
+        return PARSECLibrary()
+    elseif name == "mist"
+        vvcrit = get(dict, "vvcrit", 0.0)
+        return MISTLibrary(vvcrit)
+    elseif name == "bastiv1"
+        α_fe = get(dict, "alpha_fe", 0.0)::Float64
+        canonical = get(dict, "canonical", false)::Bool
+        agb = get(dict, "agb", false)::Bool
+        eta = get(dict, "eta", 0.4)::Float64
+        return BaSTIv1Library(α_fe, canonical, agb, eta)
+    elseif name == "bastiv2"
+        α_fe = get(dict, "alpha_fe", 0.0)::Float64
+        canonical = get(dict, "canonical", false)::Bool
+        diffusion = get(dict, "diffusion", true)::Bool
+        yp = get(dict, "yp", 0.247)::Float64
+        eta = get(dict, "eta", 0.3)::Float64
+        return BaSTIv2Library(α_fe, canonical, diffusion, yp, eta)
+    end
+end
+
+function parse_bcs(dict)
+    # Recursion: If this is top-level dict, call again with sub-dictionaries as argument 
+    if "bolometriccorrections" ∈ keys(dict)
+        bc = dict["bolometriccorrections"]
+        return [parse_tracks(bc[key]) for key in keys(bc)]
+    end
+    name = lowercase(dict["name"])
+    filterset = dict["filterset"]
+    return if name == "ybc"
+        try
+            BC.YBCGrid(filterset)
+        catch e
+            println("Failed to initialize YBC bolometric correction grid with filterset $filterset; error shown below")
+            rethrow(e)
+        end
+    elseif name == "mist"
+        try
+            BC.MISTBCGrid(filterset)
+        catch e
+            println("Failed to initialize MIST bolometric correction grid with filterset $filterset; error shown below")
+            rethrow(e)
+        end
+    end
+end
+
 function parse_config(file::AbstractString)
+    @info "Parsing config"
     file
     if !isfile(file)
         throw(ArgumentError("Config file $file not found."))
@@ -66,8 +123,12 @@ function parse_config(file::AbstractString)
     minerr = get(config["data"]["ASTs"], "minerr", 0.0)::Float64
     imf = parse_imf(config)
     binary_model = parse_binaries(config)
+    @info "Loading stellar tracks"
+    stellar_tracks = parse_tracks(config)
+    @info "Loading bolometric corrections"
+    bcs = parse_bcs(config)
 
-    return (phot_file=phot_file, ast_file=ast_file, filters=filters, badval=config["data"]["ASTs"]["badval"], maxerr=maxerr, minerr=minerr, xbins=xbins, ybins=ybins, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"])
+    return (phot_file=phot_file, ast_file=ast_file, filters=filters, badval=config["data"]["ASTs"]["badval"], maxerr=maxerr, minerr=minerr, xbins=xbins, ybins=ybins, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs)
 end
 
 # parse_config("sfh_scripting.jl")

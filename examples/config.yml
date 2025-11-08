@@ -28,6 +28,41 @@ binaries:
   model: RandomBinaryPairs
   binary_fraction: 0.4
 
+stellartracks:
+  # One entry per stellar track library you want to run the SFH fit with.
+  # Name either parsec, mist, bastiv1, bastiv2 (case insensitive).
+  # Use of bastiv1 (old basti models) is discouraged. 
+  # parsec takes no arguments. 
+  # mist takes vvcrit argument, either 0.0 (non-rotating) or 0.4 (rotating).
+  # bastiv2 takes several arguments, for valid options see https://cgarling.github.io/StellarTracks.jl/stable
+  # alpha_fe: [alpha/Fe], default 0.0
+  # canonical: Whether to use models with convective overshooting (false) or without (true), default false
+  # diffusion: Whether to use models with atomic diffusion (true) or without (false), default true
+  # yp: primordial helium abundance, default 0.247
+  # eta: Reimers mass-loss parameter, default 0.3
+  track1:
+    name: PARSEC
+  track2:
+    name: MIST
+    vvcrit: 0.0
+  track3: 
+    name: BASTIV2
+    alpha_fe: 0.0
+    canonical: false
+    diffusion: true
+    yp: 0.247
+    eta: 0.3
+
+bolometriccorrections:
+# The SFH will be measured for each combination of track (defined above) and bolometric correction library (defined here)
+# See documentation https://cgarling.github.io/BolometricCorrections.jl/stable/ for names of available filtersets
+  bc1: 
+    name: YBC
+    filterset: acs_wfc
+  bc2: 
+    name: MIST
+    filterset: acs_wfc
+
 properties:
   Av: 0.13466152995504851 # V-band extinction
   distance_modulus: 24.95
