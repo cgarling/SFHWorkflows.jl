@@ -60,7 +60,7 @@ function process_asts(input, output, badval::Number, minerr::Number, maxerr::Num
     return (complete_itp, bias_itp, err_itp)
 end
 
-function plot_residual(input, output, itps, mag_label, err_range, badval::Number)
+function plot_ast_residual(input, output, itps, mag_label, err_range, badval::Number)
         # Plot residuals, bias
         f = Figure()
         ax = Axis(f[1, 1], xlabel="Magnitude", ylabel=L"$\langle$ Output - Input $\rangle$", title=mag_label * " residuals")
@@ -87,17 +87,17 @@ function plot_residual(input, output, itps, mag_label, err_range, badval::Number
         return f
 end
 
-function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters; 
-                 badval::Number=99.999, minerr::Number=0.0, maxerr::Number=0.2, plot_diagnostics::Bool=true) # filters=("mag1", "mag2")
-
-    # obsmags = readdlm(obsfile, ' ', Float64)
+# function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters; 
+#                  badval::Number=99.999, minerr::Number=0.0, maxerr::Number=0.2, plot_diagnostics::Bool=true) # filters=("mag1", "mag2")
+# Processes AST file and returns completeness, error, bias results
+function process_ast_file(astfile::AbstractString, filters, badval::Number, minerr::Number, maxerr::Number, plot_diagnostics::Bool)
     astmags = readdlm(astfile, ' ', Float64)
-    @check iseven(size(astmags, 2))
-    nfilters = size(astmags, 2) ÷ 2
-    @check nfilters == length(filters) "Mismatch between `length(filters)` and number of columns in AST file $astfile."
+    # @check iseven(size(astmags, 2))
+    # nfilters = size(astmags, 2) ÷ 2
+    # @check nfilters == length(filters) "Mismatch between `length(filters)` and number of columns in AST file $astfile."
+    @check size(astmags, 2) == 4 "ast_file must have 4 columns; `(inputmag1, inputmag2, (outmag1 - inputmag1), (outmag2 - inputmag2)`."
 
-    # Allow an arbitrary number of filters in the astfile, but not using all of them
-    @info "Processing ASTs ..."
+    @info "Processing ASTs"
     # MATCH convention for the AST file is
     # (inputmag1, inputmag2, (outmag1 - inputmag1), (outmag2 - inputmag2)
     input1, input2 = view(astmags, :, 1), view(astmags, :, 2)
@@ -124,10 +124,10 @@ function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters;
         # errlim2 = (max(-1.5*maxerr, -errmax2), 
         #            min(1.5*maxerr, errmax2))
         errlim = (max(-1.5*maxerr, -0.4), min(1.5*maxerr, 0.4))
-        f = plot_residual(input1, output1, r1, filters[1], errlim, badval)
+        f = plot_ast_residual(input1, output1, r1, filters[1], errlim, badval)
         # display(f)
         save("residuals1.pdf", f)
-        f = plot_residual(input2, output2, r2, filters[2], errlim, badval)
+        f = plot_ast_residual(input2, output2, r2, filters[2], errlim, badval)
         # display(f)
         save("residuals2.pdf", f)
 
@@ -175,9 +175,16 @@ function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters;
         # When finished, merge pdfs into one
         merge_pdfs(["residuals1.pdf", "residuals2.pdf", "error.pdf", "completeness.pdf"], "diagnostics.pdf"; cleanup=true)
     end
+    completeness = [r1[1], r2[1]]
+    bias = [r1[2], r2[2]]
+    err = [r1[3], r2[3]]
+    return (completeness = completeness, bias = bias, err = err)
+end
 
-    return (r1, r2)
-
+function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters; 
+                 badval::Number=99.999, minerr::Number=0.0, maxerr::Number=0.2, plot_diagnostics::Bool=true) # filters=("mag1", "mag2")
+    filters = string.(filters)
+    completeness, bias, err = process_ast_file(astfile, filters, badval, minerr, maxerr, plot_diagnostics)
 end
 
 fit_sfh(config::NamedTuple) = fit_sfh(config.phot_file, config.ast_file, config.filters; badval=config.badval, minerr=config.minerr, maxerr=config.maxerr, plot_diagnostics=config.plot_diagnostics)
