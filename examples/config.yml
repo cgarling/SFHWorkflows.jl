@@ -68,5 +68,43 @@ properties:
   distance_modulus: 24.95
   Mstar: 2.6e6 # Stellar mass to set normalization of initial SFH guess; order-of-magnitude
 
+metallicity: # Options are LinearAMR, LogarithmicAMR, PowerLawMZR, examples below
+  name: PowerLawMZR # [M/H] = alpha * (log10(M_*(t)) - log10(mstar0)) + beta
+  alpha: # power-law slope parameter
+    x0: 1.0 # Initial guess
+    free: true # Whether to parameter should be free to vary (true) or fixed (false)
+  beta: # power-law intercept parameter
+    x0: -1.5 # Initial guess
+    free: true
+  mstar0: 1e6 # Stellar mass normalization; by definition, metallicity is beta at mstar0. Generally leave this be.
+  std: 0.1 # Gaussian σ for the spread in metallicity at fixed time
+
+# metallicity:
+#   name: LinearAMR # [M/H] = alpha * (T_max - t) + beta, [M/H] is logarithmic metallicity
+#   alpha:
+#     x0: 0.1
+#     free: true
+#   beta:
+#     x0: -1.5
+#     free: true
+#   Tmax: 13.7 # Highest valid lookback time, typically the age of the Universe, in units of Gyr.
+#   std: 0.1
+
+# metallicity:
+#   name: LogarithmicAMR # Z = α * (T_max - t_j) + β, Z is metal mass fraction
+#   alpha:
+#     x0: 1e-4
+#     free: true
+#   beta:
+#     x0: 5e-5
+#     free: true
+#   Tmax: 13.7 # Highest valid lookback time, typically the age of the Universe, in units of Gyr.
+#   std: 0.1
+
 plotting:
-  diagnostics: true # Creates diagnostics.pdf showing derived error and completeness functions
+  diagnostics: true # Creates diagnostics.pdf in output.path (see below) showing derived error and completeness functions
+
+output:
+  # Absolute or relative path to where you want the results to be stored. If path doesn't exist, it is created. 
+  # Default "." indicates you want results stored in the directory that you are running the Julia process from.
+  path: ./results

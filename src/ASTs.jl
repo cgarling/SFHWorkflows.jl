@@ -1,3 +1,4 @@
+"""Module containing code to process artificial star test results into input appropriate for use in Systematics module."""
 module ASTs
 
 export process_ast_file
@@ -75,7 +76,7 @@ function plot_ast_residual(input, output, itps, mag_label, err_range, badval::Nu
 end
 
 # Processes AST file and returns completeness, error, bias results
-function process_ast_file(astfile::AbstractString, filters, badval::Number, minerr::Number, maxerr::Number, plot_diagnostics::Bool)
+function process_ast_file(astfile::AbstractString, filters, badval::Number, minerr::Number, maxerr::Number, plot_diagnostics::Bool, output_path::AbstractString)
     astmags = readdlm(astfile, ' ', Float64)
     # @check iseven(size(astmags, 2))
     # nfilters = size(astmags, 2) ÷ 2
@@ -111,10 +112,10 @@ function process_ast_file(astfile::AbstractString, filters, badval::Number, mine
         errlim = (max(-1.5*maxerr, -0.4), min(1.5*maxerr, 0.4))
         f = plot_ast_residual(input1, output1, r1, filters[1], errlim, badval)
         # display(f)
-        save("residuals1.pdf", f)
+        save(joinpath(output_path, "residuals1.pdf"), f)
         f = plot_ast_residual(input2, output2, r2, filters[2], errlim, badval)
         # display(f)
-        save("residuals2.pdf", f)
+        save(joinpath(output_path, "residuals2.pdf"), f)
 
         # Plot completeness
         f = Figure()
@@ -127,7 +128,7 @@ function process_ast_file(astfile::AbstractString, filters, badval::Number, mine
         lines!(ax, r2[1].t, r2[1].(r2[1].t), color=:red, linestyle=:dash, label=filters[2])
         axislegend(ax, merge=true, unique=true)
         # display(f)
-        save("completeness.pdf", f)
+        save(joinpath(output_path, "completeness.pdf"), f)
 
         # # Plot bias
         # f = Figure()
@@ -155,10 +156,10 @@ function process_ast_file(astfile::AbstractString, filters, badval::Number, mine
         ylims!(0.0, maxerr*1.5)
         axislegend(ax, merge=true, unique=true, position=:lt)
         # display(f)
-        save("error.pdf", f)
+        save(joinpath(output_path, "error.pdf"), f)
 
         # When finished, merge pdfs into one
-        merge_pdfs(["residuals1.pdf", "residuals2.pdf", "error.pdf", "completeness.pdf"], "diagnostics.pdf"; cleanup=true)
+        merge_pdfs(map(Base.Fix1(joinpath, output_path), ["residuals1.pdf", "residuals2.pdf", "error.pdf", "completeness.pdf"]), joinpath(output_path, "diagnostics.pdf"); cleanup=true)
     end
     completeness = [r1[1], r2[1]]
     bias = [r1[2], r2[2]]

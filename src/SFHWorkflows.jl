@@ -3,7 +3,7 @@ module SFHWorkflows
 export fit_sfh
 
 using StatsBase: Histogram
-using CairoMakie # CairoMakie re-exports Makie
+using CairoMakie: Makie, set_theme!, theme_latexfonts # CairoMakie re-exports Makie
 set_theme!(theme_latexfonts(); 
         fontsize=20,
         Axis = (xticks = Makie.LinearTicks(5),
@@ -26,15 +26,17 @@ include("Parsing.jl") # Code to parse configuration file
 using .Parsing
 include("ASTs.jl") # Code to analyze artificial star tests
 using .ASTs
+include("Systematics.jl")
+using .Systematics
 
 # Top-level functions
 function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters; 
-                 badval::Number=99.999, minerr::Number=0.0, maxerr::Number=0.2, plot_diagnostics::Bool=true) # filters=("mag1", "mag2")
+                 badval::Number=99.999, minerr::Number=0.0, maxerr::Number=0.2, plot_diagnostics::Bool=true, output_path::AbstractString=".") # filters=("mag1", "mag2")
     filters = string.(filters)
-    completeness, bias, err = process_ast_file(astfile, filters, badval, minerr, maxerr, plot_diagnostics)
+    completeness, bias, err = process_ast_file(astfile, filters, badval, minerr, maxerr, plot_diagnostics, output_path)
 end
 
-fit_sfh(config::NamedTuple) = fit_sfh(config.phot_file, config.ast_file, config.filters; badval=config.badval, minerr=config.minerr, maxerr=config.maxerr, plot_diagnostics=config.plot_diagnostics)
+fit_sfh(config::NamedTuple) = fit_sfh(config.phot_file, config.ast_file, config.filters; badval=config.badval, minerr=config.minerr, maxerr=config.maxerr, plot_diagnostics=config.plot_diagnostics, output_path=config.output_path)
 fit_sfh(config_file::AbstractString) = fit_sfh(parse_config(config_file))
 
 end # module

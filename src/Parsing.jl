@@ -1,10 +1,11 @@
+"""Module containing code to parse input configuration file and construct input for Systematics module."""
 module Parsing
 
 export parse_config
 
 import YAML
 using InitialMassFunctions
-using StarFormationHistories: NoBinaries, RandomBinaryPairs
+using StarFormationHistories: NoBinaries, RandomBinaryPairs, MH_from_Z, dMH_dZ, PowerLawMZR, LinearAMR, LogarithmicAMR, GaussianDispersion
 using StellarTracks: PARSECLibrary, MISTLibrary, BaSTIv1Library, BaSTIv2Library
 using BolometricCorrections: YBCGrid, MISTBCGrid
 
@@ -103,9 +104,41 @@ function parse_bcs(dict)
     end
 end
 
+# metallicity: # Options are LinearAMR, LogarithmicAMR, PowerLawMZR, examples below
+#   name: PowerLawMZR # [M/H] = alpha * (log10(M_*(t)) - log10(mstar0)) + beta
+#   alpha: # power-law slope parameter
+#     x0: 1.0 # Initial guess
+#     free: true # Whether to parameter should be free to vary (true) or fixed (false)
+#   beta: # power-law intercept parameter
+#     x0: -1.5 # Initial guess
+#     free: true
+#   mstar0: 1e6 # Stellar mass normalization; by definition, metallicity is beta at mstar0. Generally leave this be.
+#   std: 0.1 # Gaussian σ for the spread in metallicity at fixed time
+
+function parse_metallicity(dict)
+    # Recursion: If this is top-level dict, call again with sub-dictionaries as argument 
+    if "metallicity" ∈ keys(dict)
+        d = dict["metallicity"]
+        return parse_metallicity(d)
+    end
+    valid_models = ("PowerLawMZR", "LinearAMR", "LogarithmicAMR") # ("powerlawmzr", "linearamr", "logarithmicamr")
+    name = lowercase(dict["name"])
+    if !(name ∈ lowercase.(valid_models))
+        error("Metallicity model $name invalid; valid metallicity models are $(join(valid_models, ", ")).")
+    end
+    MH_model0 = if name == "powerlawmzr"
+        PowerLawMZR(dict["alpha"]["x0"], dict["beta"]["x0"], dict["mstar0"], (dict["alpha"]["free"], dict["beta"]["free"]))
+    elseif name == "linearamr"
+        LinearAMR(dict["alpha"]["x0"], dict["beta"]["x0"], dict["T_max"], (dict["alpha"]["free"], dict["beta"]["free"]))
+    elseif name == "logarithmicamr"
+        LogarithmicAMR(dict["alpha"]["x0"], dict["beta"]["x0"], dict["T_max"], MH_from_Z, dMH_dZ, (dict["alpha"]["free"], dict["beta"]["free"]))
+    end
+    disp_model0 = GaussianDispersion(dict["std"], (true,))
+    return MH_model0, disp_model0
+end
+
 function parse_config(file::AbstractString)
     @info "Parsing config"
-    file
     if !isfile(file)
         throw(ArgumentError("Config file $file not found."))
     end
@@ -115,6 +148,16 @@ function parse_config(file::AbstractString)
     catch e
         println("Failed to parse configuration YAML file $file with error: ")
         rethrow(e)
+    end
+
+    output_path = get(config["output"], "path", ".")
+    if !isdir(output_path)
+        try
+            mkdir(output_path)
+        catch e
+            "Requested output_path $output_path does not exist and attempt to create directory failed. Ensure you have write permissions to this path. Full error: "
+            rethrow(e)
+        end
     end
 
     data_path = config["data"]["path"]
@@ -131,8 +174,9 @@ function parse_config(file::AbstractString)
     stellar_tracks = parse_tracks(config)
     @info "Loading bolometric corrections"
     bcs = parse_bcs(config)
+    MH_model0, disp_model0 = parse_metallicity(config)
 
-    return (phot_file=phot_file, ast_file=ast_file, filters=filters, badval=config["data"]["ASTs"]["badval"], maxerr=maxerr, minerr=minerr, xbins=xbins, ybins=ybins, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs)
+    return (phot_file=phot_file, ast_file=ast_file, filters=filters, badval=config["data"]["ASTs"]["badval"], maxerr=maxerr, minerr=minerr, xbins=xbins, ybins=ybins, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0,output_path=output_path)
 end
 
 end # module
