@@ -74,8 +74,6 @@ function plot_ast_residual(input, output, itps, mag_label, err_range, badval::Nu
         return f
 end
 
-# function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters; 
-#                  badval::Number=99.999, minerr::Number=0.0, maxerr::Number=0.2, plot_diagnostics::Bool=true) # filters=("mag1", "mag2")
 # Processes AST file and returns completeness, error, bias results
 function process_ast_file(astfile::AbstractString, filters, badval::Number, minerr::Number, maxerr::Number, plot_diagnostics::Bool)
     astmags = readdlm(astfile, ' ', Float64)
@@ -169,14 +167,3 @@ function process_ast_file(astfile::AbstractString, filters, badval::Number, mine
 end
 
 end # module
-
-# data_path = "/home/cgarling/Work/UVA/Projects/SFH/aquarius/data"
-# # # data_path = "/home/cgarling/Work/UVA/Projects/SFH/leo_a/data/newman"
-# fit_sfh(joinpath(data_path, "phot.dat"),
-#         joinpath(data_path, "fake.dat"),
-#         ("F475W", "F814W");
-#         badval=99.999, minerr=0.01, maxerr=0.2,
-#         plot_diagnostics=true);
-
-# include("parse_config.jl")
-# fit_sfh("config.yml")
