@@ -1,3 +1,7 @@
+module Parsing
+
+export parse_config
+
 import YAML
 using InitialMassFunctions
 using StarFormationHistories: NoBinaries, RandomBinaryPairs
@@ -133,3 +137,5 @@ end
 
 # parse_config("sfh_scripting.jl")
 # parse_config("config.yml")
+
+end # module
