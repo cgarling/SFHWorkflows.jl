@@ -6,7 +6,7 @@ import YAML
 using InitialMassFunctions
 using StarFormationHistories: NoBinaries, RandomBinaryPairs
 using StellarTracks: PARSECLibrary, MISTLibrary, BaSTIv1Library, BaSTIv2Library
-import BolometricCorrections as BC
+using BolometricCorrections: YBCGrid, MISTBCGrid
 
 strip_whitespace(s::AbstractString) = replace(s, r"\s+" => "")
 
@@ -88,14 +88,14 @@ function parse_bcs(dict)
     filterset = dict["filterset"]
     return if name == "ybc"
         try
-            BC.YBCGrid(filterset)
+            YBCGrid(filterset)
         catch e
             println("Failed to initialize YBC bolometric correction grid with filterset $filterset; error shown below")
             rethrow(e)
         end
     elseif name == "mist"
         try
-            BC.MISTBCGrid(filterset)
+            MISTBCGrid(filterset)
         catch e
             println("Failed to initialize MIST bolometric correction grid with filterset $filterset; error shown below")
             rethrow(e)
