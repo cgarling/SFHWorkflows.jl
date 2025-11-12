@@ -25,8 +25,9 @@ imf:
 
 binaries:
   # Valid models: NoBinaries, RandomBinaryPairs
-  model: RandomBinaryPairs
-  binary_fraction: 0.4
+  # model: RandomBinaryPairs
+  # binary_fraction: 0.4
+  model: NoBinaries
 
 stellartracks:
   # One entry per stellar track library you want to run the SFH fit with.
@@ -52,6 +53,10 @@ stellartracks:
     diffusion: true
     yp: 0.247
     eta: 0.3
+  logAge: range(6.6, 10.13; step=0.05) # Specification for grid of log10(age [yr]) values. Either a range object or a discrete vector
+  # logAge: [9.0, 9.5, 10.0] # Example for a discrete vector
+  MH: range(-2.4, 0.0; step=0.1) # Specification for grid of logarithmic metallicities [M/H]; for scaled solar abundances, [M/H] = [Fe/H].
+  # MH: [-2.0, -1.5, -1.0] # Example for a discrete vector
 
 bolometriccorrections:
 # The SFH will be measured for each combination of track (defined above) and bolometric correction library (defined here)
@@ -105,6 +110,11 @@ plotting:
   diagnostics: true # Creates diagnostics.pdf in output.path (see below) showing derived error and completeness functions
 
 output:
-  # Absolute or relative path to where you want the results to be stored. If path doesn't exist, it is created. 
+  # Absolute or relative path to where you want the results (data files, plots, etc.) to be stored.
+  # If path doesn't exist, it is created. 
   # Default "." indicates you want results stored in the directory that you are running the Julia process from.
   path: ./results
+  # filename indicates the file (relative to above path) to write final SFH results to.
+  # Additional results files below are constructed from filename via the pattern <basename>.<extension>
+  # <basename>_mass.<extension> contains statistics on the total stellar mass formed in the SFH fits.
+  filename: results.txt

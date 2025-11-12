@@ -20,6 +20,12 @@ function parse_to_vector(input::AbstractString)
 end
 
 """
+    parse_range(input::AbstractString)::Vector{Float64}
+Parse a range specified as a string (e.g., input = "range(0, 10; step=0.1)").
+"""
+parse_range(input::AbstractString) = eval(Meta.parse(input))::StepRangeLen
+
+"""
     parse_imf(dict)
 Parses the IMF portion of the configuration dictionary and returns an instantiated IMF object.
 """
@@ -55,7 +61,9 @@ function parse_tracks(dict)
     if "stellartracks" ∈ keys(dict)
         # return [parse_tracks(track) for track in dict["stellartracks"]]
         st = dict["stellartracks"]
-        return [parse_tracks(st[key]) for key in keys(st)]
+        # Filter out only keys that contain "track" and sort so that order is track1, track2, track3, etc.
+        goodkeys = sort([key for key in keys(st) if occursin("track", key)])
+        return [parse_tracks(st[key]) for key in goodkeys]
     end
     valid_models = ("parsec", "mist", "bastiv1", "bastiv2")
     name = lowercase(dict["name"])
@@ -135,13 +143,13 @@ function parse_metallicity(dict)
         error("Metallicity model $name invalid; valid metallicity models are $(join(valid_models, ", ")).")
     end
     MH_model0 = if name == "powerlawmzr"
-        PowerLawMZR(dict["alpha"]["x0"], dict["beta"]["x0"], dict["mstar0"], (dict["alpha"]["free"], dict["beta"]["free"]))
+        PowerLawMZR(dict["alpha"]["x0"], dict["beta"]["x0"], log10(dict["mstar0"]), (dict["alpha"]["free"], dict["beta"]["free"]))
     elseif name == "linearamr"
         LinearAMR(dict["alpha"]["x0"], dict["beta"]["x0"], dict["T_max"], (dict["alpha"]["free"], dict["beta"]["free"]))
     elseif name == "logarithmicamr"
         LogarithmicAMR(dict["alpha"]["x0"], dict["beta"]["x0"], dict["T_max"], MH_from_Z, dMH_dZ, (dict["alpha"]["free"], dict["beta"]["free"]))
     end
-    disp_model0 = GaussianDispersion(dict["std"], (true,))
+    disp_model0 = GaussianDispersion(dict["std"], (false,))
     return MH_model0, disp_model0
 end
 
@@ -172,8 +180,8 @@ function parse_config(file::AbstractString)
     phot_file = joinpath(data_path, config["data"]["photometry"]["photometry_file"])
     ast_file = joinpath(data_path, config["data"]["ASTs"]["ast_file"])
     filters = parse_to_vector(config["data"]["photometry"]["filters"])
-    ybins = eval(Meta.parse(config["data"]["binning"]["ybins"]))
-    xbins = eval(Meta.parse(config["data"]["binning"]["xbins"]))
+    ybins = parse_range(config["data"]["binning"]["ybins"])
+    xbins = parse_range(config["data"]["binning"]["xbins"])
     maxerr = get(config["data"]["ASTs"], "maxerr", Inf)::Float64 # If maxerr not provided, use Inf
     minerr = get(config["data"]["ASTs"], "minerr", 0.0)::Float64
     imf = parse_imf(config)
@@ -183,8 +191,10 @@ function parse_config(file::AbstractString)
     @info "Loading bolometric corrections"
     bcs = parse_bcs(config)
     MH_model0, disp_model0 = parse_metallicity(config)
+    logAge = eval(Meta.parse(config["stellartracks"]["logAge"]))
+    MH = eval(Meta.parse(config["stellartracks"]["MH"]))
 
-    return (phot_file=phot_file, ast_file=ast_file, filters=filters, badval=config["data"]["ASTs"]["badval"], maxerr=maxerr, minerr=minerr, xbins=xbins, ybins=ybins, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0,output_path=output_path)
+    return (phot_file=phot_file, ast_file=ast_file, filters=filters, badval=config["data"]["ASTs"]["badval"], maxerr=maxerr, minerr=minerr, xbins=xbins, ybins=ybins, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0, output_path=output_path, output_filename=config["output"]["filename"], ystring=config["data"]["binning"]["yfilter"], xstrings=string.(split(strip_whitespace(config["data"]["binning"]["xcolor"]), ",")), logAge=logAge, MH=MH)
 end
 
 end # module

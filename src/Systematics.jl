@@ -4,9 +4,10 @@ module Systematics
 export systematics, mag_select
 
 import StarFormationHistories as SFH
+import CSV
 using TypedTables: Table, columnnames, getproperties
 using BolometricCorrections: chemistry, MH, Z, filternames, AbstractBCGrid, AbstractBCTable, MISTBCGrid, gridname
-using StellarTracks: AbstractTrackLibrary
+using StellarTracks: AbstractTrackLibrary, isochrone
 using ArgCheck: @argcheck
 using Printf: @printf, @sprintf, Format, format
 using StatsBase: quantile
@@ -132,10 +133,10 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
             iso = isochrone(tracklib, bct, logage, tracklib_mh)
             iso_mags = [getproperty(iso, k) for k in iso_symb] # (xsymb, ysymbs...)]
             m_ini = iso.m_ini
-            templates[ind] = partial_cmd_smooth(m_ini, iso_mags, err_funcs, yidx, xidxs, imf, 
-                                                complete_funcs, bias_funcs; 
-                                                dmod=dmod, normalize_value=normalize_value, edges=edges, 
-                                                mean_mass=imf_mean, binary_model=binary_model).weights
+            templates[ind] = SFH.partial_cmd_smooth(m_ini, iso_mags, err_funcs, yidx, xidxs, imf, 
+                                                    complete_funcs, bias_funcs; 
+                                                    dmod=dmod, normalize_value=normalize_value, edges=edges, 
+                                                    mean_mass=imf_mean, binary_model=binary_model).weights
             template_logAge[ind] = logage
             template_MH[ind] = mh
         end
@@ -164,6 +165,10 @@ function write_systable(fname::AbstractString, table)
     function transform(col, val::Number)
         if (col == 1) | (col == 2)
             return @sprintf("%.3f", val)
+        # SFR parameters are in columns with # multiples of 7, 8, 9
+        # and can be low, so format as exponential for better precision
+        elseif any(==(0), map(Base.Fix1(rem, col), (7, 8, 9)))
+            return @sprintf("%.7e", val)
         else 
             return @sprintf("%.7f", val)
         end
@@ -197,8 +202,8 @@ function fit_sfh(MH_model0::SFH.AbstractMetallicityModel,
     all_templates = templates(tracklib, bclib, xstrings, ystring, dmod, Av, err_funcs, complete_funcs, bias_funcs,
                               imf, unique_MH, unique_logAge, edges;
                               normalize_value=normalize_value, binary_model=binary_model, imf_mean=imf_mean)
-    result = fit_sfh(MH_model0, disp_model0, SFH.stack_models(all_templates.templates), vec(data), all_templates.logAge, all_templates.MH;
-                     x0=SFH.construct_x0_mdf(all_templates.logAge, T_max; normalize_value=mstar / normalize_value))
+    result = SFH.fit_sfh(MH_model0, disp_model0, SFH.stack_models(all_templates.templates), vec(data), all_templates.logAge, all_templates.MH;
+                         x0=SFH.construct_x0_mdf(all_templates.logAge, T_max; normalize_value=mstar / normalize_value))
     return merge((result=result,), all_templates)
 end
 
@@ -232,7 +237,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
     # present_masses = Matrix{Float64}(undef, nsolutions, 3)
     tables = Vector{Table}(undef, nsolutions)
 
-    
+    @info "Entering threaded SFH loop"
     Threads.@threads for i in eachindex(tracklibs)
         tracklib = tracklibs[i]
         Threads.@threads for j in eachindex(bclibs)
@@ -304,6 +309,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
 
         end
     end
+    @info "SFH fits complete; measuring statistics"
     masstable = Table(name = vec([gridname(i) * "_" * gridname(j) for i=tracklibs, j=bclibs]),
                       mstar_lower = birth_masses[:,1], mstar = birth_masses[:,2], mstar_upper = birth_masses[:,3])
     write_masstable(splitext(output)[1]*"_mass"*splitext(output)[2], masstable)
