@@ -1,6 +1,8 @@
 """Module containing code that will run SFH fitting given prepared inputs."""
 module Systematics
 
+export systematics, mag_select
+
 import StarFormationHistories as SFH
 using TypedTables: Table, columnnames, getproperties
 using BolometricCorrections: chemistry, MH, Z, filternames, AbstractBCGrid, AbstractBCTable, MISTBCGrid, gridname

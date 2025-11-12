@@ -57,7 +57,11 @@ function parse_tracks(dict)
         st = dict["stellartracks"]
         return [parse_tracks(st[key]) for key in keys(st)]
     end
+    valid_models = ("parsec", "mist", "bastiv1", "bastiv2")
     name = lowercase(dict["name"])
+    if !(name ∈ valid_models)
+        error("Stellar track model $name invalid; valid stellar track models are $(join(valid_models, ", ")).")
+    end
     if name == "parsec"
         return PARSECLibrary()
     elseif name == "mist"
@@ -83,9 +87,13 @@ function parse_bcs(dict)
     # Recursion: If this is top-level dict, call again with sub-dictionaries as argument 
     if "bolometriccorrections" ∈ keys(dict)
         bc = dict["bolometriccorrections"]
-        return [parse_tracks(bc[key]) for key in keys(bc)]
+        return [parse_bcs(bc[key]) for key in keys(bc)]
     end
+    valid_models = ("ybc", "mist")
     name = lowercase(dict["name"])
+    if !(name ∈ valid_models)
+        error("Bolometric correction grid $name invalid; valid BC grids are are $(join(valid_models, ", ")).")
+    end
     filterset = dict["filterset"]
     return if name == "ybc"
         try
