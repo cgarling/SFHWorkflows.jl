@@ -153,6 +153,10 @@ function parse_metallicity(dict)
     return MH_model0, disp_model0
 end
 
+# This function will parse YAML file to dictionary, then call below function
+# that takes input dictionary. This way, if you want, you can load the dict from 
+# file, programmatically update the dict, and pass the altered dict to parse_config
+# to easily run different variations on the same YAML without manually editing it.
 function parse_config(file::AbstractString)
     @info "Parsing config"
     if !isfile(file)
@@ -165,7 +169,10 @@ function parse_config(file::AbstractString)
         println("Failed to parse configuration YAML file $file with error: ")
         rethrow(e)
     end
+    return parse_config(config)
+end
 
+function parse_config(config::AbstractDict)
     output_path = get(config["output"], "path", ".")
     if !isdir(output_path)
         try
