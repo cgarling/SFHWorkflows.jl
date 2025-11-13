@@ -10,6 +10,7 @@ using BolometricCorrections: chemistry, MH, Z, filternames, AbstractBCGrid, Abst
 using StellarTracks: AbstractTrackLibrary, isochrone
 using ArgCheck: @argcheck
 using Printf: @printf, @sprintf, Format, format
+using LinearAlgebra: BLAS
 using StatsBase: quantile
 # using Interpolations: interpolate, Gridded, Linear #, Throw, extrapolate, Flat
 # using Roots: find_zero # For taus
@@ -225,119 +226,125 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
     logAge_l = sort(unique_logAge)
     logAge_u = vcat(logAge_l[begin+1:end], log10(T_max) + 9)
 
-    # Construct observed Hess diagram; convert weights to vector
-    # obs = vec(SFH.bin_cmd(xmags, ymags, edges=edges).weights)
+    blas_threads = BLAS.get_num_threads() # Log number of BLAS threads so we can revert back to this at the end
+    BLAS.set_num_threads(1) # Set BLAS threads to 1 for more efficient solves
 
-    nsolutions = length(tracklibs) * length(bclibs)
-    results = Vector{SFH.CompositeBFGSResult}(undef, nsolutions)
-    templates = Vector{Vector{Matrix{Float64}}}(undef, nsolutions)
-    logAge = Vector{Vector{Float64}}(undef, nsolutions) # These should be the same for every solution
-    MH = Vector{Vector{Float64}}(undef, nsolutions)     # These should be the same for every solution
-    birth_masses = Matrix{Float64}(undef, nsolutions, 3)
-    # present_masses = Matrix{Float64}(undef, nsolutions, 3)
-    tables = Vector{Table}(undef, nsolutions)
+    try # try-finally to make sure BLAS threads revert after solves
+        println(BLAS.get_num_threads())
+        nsolutions = length(tracklibs) * length(bclibs)
+        results = Vector{SFH.CompositeBFGSResult}(undef, nsolutions)
+        templates = Vector{Vector{Matrix{Float64}}}(undef, nsolutions)
+        logAge = Vector{Vector{Float64}}(undef, nsolutions) # These should be the same for every solution
+        MH = Vector{Vector{Float64}}(undef, nsolutions)     # These should be the same for every solution
+        birth_masses = Matrix{Float64}(undef, nsolutions, 3)
+        # present_masses = Matrix{Float64}(undef, nsolutions, 3)
+        tables = Vector{Table}(undef, nsolutions)
 
-    @info "Entering threaded SFH loop"
-    Threads.@threads for i in eachindex(tracklibs)
-        tracklib = tracklibs[i]
-        Threads.@threads for j in eachindex(bclibs)
-            bclib = bclibs[j]
-            ind = j + ((i-1) * length(bclibs)) # index into result for (i,j)
-            fit_result = fit_sfh(MH_model0, disp_model0, mstar, data, tracklib, bclib, xstrings,
-                                 ystring, dmod, Av, err_funcs,
-                                 complete_funcs, bias_funcs, imf, unique_MH, unique_logAge, edges; normalize_value=normalize_value,
-                                 binary_model=binary_model, imf_mean=imf_mean, T_max=T_max)
-            results[ind] = fit_result[1]
-            templates[ind] = fit_result.templates
-            logAge[ind] = fit_result.logAge
-            MH[ind] = fit_result.MH
+        @info "Entering threaded SFH loop"
+        Threads.@threads for i in eachindex(tracklibs)
+            tracklib = tracklibs[i]
+            Threads.@threads for j in eachindex(bclibs)
+                bclib = bclibs[j]
+                ind = j + ((i-1) * length(bclibs)) # index into result for (i,j)
+                fit_result = fit_sfh(MH_model0, disp_model0, mstar, data, tracklib, bclib, xstrings,
+                                    ystring, dmod, Av, err_funcs,
+                                    complete_funcs, bias_funcs, imf, unique_MH, unique_logAge, edges; normalize_value=normalize_value,
+                                    binary_model=binary_model, imf_mean=imf_mean, T_max=T_max)
+                results[ind] = fit_result[1]
+                templates[ind] = fit_result.templates
+                logAge[ind] = fit_result.logAge
+                MH[ind] = fit_result.MH
 
-            coeffs = SFH.calculate_coeffs(fit_result[1], fit_result.logAge, fit_result.MH) .* normalize_value
-            ul, cum_sfh, sfr, mean_MH = SFH.calculate_cum_sfr(coeffs, fit_result.logAge, fit_result.MH, T_max; sorted=true)
-            
-            # Calculate quantiles for uncertainties
-            quantile_results_map = SFH.cum_sfr_quantiles(fit_result[1].map, fit_result.logAge, fit_result.MH, T_max, 10_000, (0.16, 0.5, 0.84))
-            # quantile_results_map = try
-            #     SFH.cum_sfr_quantiles(fit_result[1].map, fit_result.logAge, fit_result.MH, T_max, 10_000, (0.16, 0.5, 0.84))
-            # catch e
-            #     println("Failed to compute MAP quantiles for tracklib=$(gridname(tracklib)), bclib=$(gridname(bclib)). Thrown error was:")
-            #     showerror(stderr, e)
-            # end
-            quantile_results_map[2] .*= normalize_value # Correct SFR normalization
-            quantile_results = SFH.cum_sfr_quantiles(fit_result[1], fit_result.logAge, fit_result.MH, T_max, 10_000, (0.16, 0.5, 0.84))
-            # quantile_results = try
-            #     SFH.cum_sfr_quantiles(fit_result[1], fit_result.logAge, fit_result.MH, T_max, 10_000, (0.16, 0.5, 0.84))
-            # catch e
-            #     println("Failed to compute MLE quantiles for tracklib=$(gridname(tracklib)), bclib=$(gridname(bclib)) -- using MAP quantiles instead. Thrown error was:")
-            #     showerror(stderr, e)
-            #     quantile_results_map
-            # end
-            quantile_results[2] .*= normalize_value # Correct SFR normalization
-            # For SFRs that are ~0, make them =0, and use the MAP uncertainty estimate
-            # for the upper uncertainty limit.
-            for k in eachindex(sfr)
-                if sfr[k] <= sfr_floor
-                    sfr[k] = 0
-                    quantile_results[2][k,begin] = 0
-                    quantile_results[2][k,end] = quantile_results_map[2][k,end]
+                coeffs = SFH.calculate_coeffs(fit_result[1], fit_result.logAge, fit_result.MH) .* normalize_value
+                ul, cum_sfh, sfr, mean_MH = SFH.calculate_cum_sfr(coeffs, fit_result.logAge, fit_result.MH, T_max; sorted=true)
+                
+                # Calculate quantiles for uncertainties
+                quantile_results_map = SFH.cum_sfr_quantiles(fit_result[1].map, fit_result.logAge, fit_result.MH, T_max, 10_000, (0.16, 0.5, 0.84))
+                # quantile_results_map = try
+                #     SFH.cum_sfr_quantiles(fit_result[1].map, fit_result.logAge, fit_result.MH, T_max, 10_000, (0.16, 0.5, 0.84))
+                # catch e
+                #     println("Failed to compute MAP quantiles for tracklib=$(gridname(tracklib)), bclib=$(gridname(bclib)). Thrown error was:")
+                #     showerror(stderr, e)
+                # end
+                quantile_results_map[2] .*= normalize_value # Correct SFR normalization
+                quantile_results = SFH.cum_sfr_quantiles(fit_result[1], fit_result.logAge, fit_result.MH, T_max, 10_000, (0.16, 0.5, 0.84))
+                # quantile_results = try
+                #     SFH.cum_sfr_quantiles(fit_result[1], fit_result.logAge, fit_result.MH, T_max, 10_000, (0.16, 0.5, 0.84))
+                # catch e
+                #     println("Failed to compute MLE quantiles for tracklib=$(gridname(tracklib)), bclib=$(gridname(bclib)) -- using MAP quantiles instead. Thrown error was:")
+                #     showerror(stderr, e)
+                #     quantile_results_map
+                # end
+                quantile_results[2] .*= normalize_value # Correct SFR normalization
+                # For SFRs that are ~0, make them =0, and use the MAP uncertainty estimate
+                # for the upper uncertainty limit.
+                for k in eachindex(sfr)
+                    if sfr[k] <= sfr_floor
+                        sfr[k] = 0
+                        quantile_results[2][k,begin] = 0
+                        quantile_results[2][k,end] = quantile_results_map[2][k,end]
+                    end
                 end
+
+                # Write birth masses into output array
+                birth_masses[ind, :] .= (SFH.integrate_sfr(logAge_l, logAge_u, quantile_results[2][:, i]) for i in 1:3)
+
+                # The complicated @eval is necessary because TypedTables.Table cannot be constructed
+                # from separate data and column names
+                # tables[ind] = @eval Table($(Symbol(:sfr_lower, ind))=$(quantile_results[2][:,begin]),
+                #                           $(Symbol(:sfr, ind))=$sfr,
+                #                           $(Symbol(:sfr_upper, ind))=$(quantile_results[2][:,end]),
+                #                           $(Symbol(:cum_sfh_lower, ind))=$(quantile_results[1][:,begin]),
+                #                           $(Symbol(:cum_sfh, ind))=$cum_sfh,
+                #                           $(Symbol(:cum_sfh_upper, ind))=$(quantile_results[1][:,end]),
+                #                           $(Symbol(:MH_lower, ind))=$(quantile_results[3][:,begin]),
+                #                           $(Symbol(:MH, ind))=$mean_MH,
+                #                           $(Symbol(:MH_upper, ind))=$(quantile_results[3][:,end]))
+                
+                # colnames = Tuple(Symbol(x, ind) for x in (:sfr_lower, :sfr, :sfr_upper, :cum_sfh_lower, :cum_sfh, :cum_sfh_upper, :MH_lower, :MH, :MH_upper))
+                colnames = Tuple(Symbol(x * "_" * gridname(tracklib) * "_" * gridname(bclib)) for x in ("sfr_lower", "sfr", "sfr_upper", "cum_sfh_lower", "cum_sfh", "cum_sfh_upper", "MH_lower", "MH", "MH_upper"))
+                datacolumns = (quantile_results[2][:,begin], sfr, quantile_results[2][:,end], quantile_results[1][:,begin], cum_sfh, quantile_results[1][:,end], quantile_results[3][:,begin], mean_MH, quantile_results[3][:,end])
+                tables[ind] = Table(NamedTuple{colnames}(datacolumns))
+
+                # Try Tables.MatrixTable for more efficient storage
+                # doesn't seem any more efficient
+                # tables[ind] = Tables.table([quantile_results[2][:,begin] sfr quantile_results[2][:,end] quantile_results[1][:,begin] cum_sfh quantile_results[1][:,end] quantile_results[3][:,begin] mean_MH quantile_results[3][:,end]]; header=[:sfr_lower, :sfr, :sfr_upper, :cum_sfh_lower, :cum_sfh, :cum_sfh_upper, :MH_lower, :MH, :MH_upper])
+
             end
-
-            # Write birth masses into output array
-            birth_masses[ind, :] .= (SFH.integrate_sfr(logAge_l, logAge_u, quantile_results[2][:, i]) for i in 1:3)
-
-            # The complicated @eval is necessary because TypedTables.Table cannot be constructed
-            # from separate data and column names
-            # tables[ind] = @eval Table($(Symbol(:sfr_lower, ind))=$(quantile_results[2][:,begin]),
-            #                           $(Symbol(:sfr, ind))=$sfr,
-            #                           $(Symbol(:sfr_upper, ind))=$(quantile_results[2][:,end]),
-            #                           $(Symbol(:cum_sfh_lower, ind))=$(quantile_results[1][:,begin]),
-            #                           $(Symbol(:cum_sfh, ind))=$cum_sfh,
-            #                           $(Symbol(:cum_sfh_upper, ind))=$(quantile_results[1][:,end]),
-            #                           $(Symbol(:MH_lower, ind))=$(quantile_results[3][:,begin]),
-            #                           $(Symbol(:MH, ind))=$mean_MH,
-            #                           $(Symbol(:MH_upper, ind))=$(quantile_results[3][:,end]))
-            
-            # colnames = Tuple(Symbol(x, ind) for x in (:sfr_lower, :sfr, :sfr_upper, :cum_sfh_lower, :cum_sfh, :cum_sfh_upper, :MH_lower, :MH, :MH_upper))
-            colnames = Tuple(Symbol(x * "_" * gridname(tracklib) * "_" * gridname(bclib)) for x in ("sfr_lower", "sfr", "sfr_upper", "cum_sfh_lower", "cum_sfh", "cum_sfh_upper", "MH_lower", "MH", "MH_upper"))
-            datacolumns = (quantile_results[2][:,begin], sfr, quantile_results[2][:,end], quantile_results[1][:,begin], cum_sfh, quantile_results[1][:,end], quantile_results[3][:,begin], mean_MH, quantile_results[3][:,end])
-            tables[ind] = Table(NamedTuple{colnames}(datacolumns))
-
-            # Try Tables.MatrixTable for more efficient storage
-            # doesn't seem any more efficient
-            # tables[ind] = Tables.table([quantile_results[2][:,begin] sfr quantile_results[2][:,end] quantile_results[1][:,begin] cum_sfh quantile_results[1][:,end] quantile_results[3][:,begin] mean_MH quantile_results[3][:,end]]; header=[:sfr_lower, :sfr, :sfr_upper, :cum_sfh_lower, :cum_sfh, :cum_sfh_upper, :MH_lower, :MH, :MH_upper])
-
         end
+        @info "SFH fits complete; measuring statistics"
+        masstable = Table(name = vec([gridname(i) * "_" * gridname(j) for i=tracklibs, j=bclibs]),
+                        mstar_lower = birth_masses[:,1], mstar = birth_masses[:,2], mstar_upper = birth_masses[:,3])
+        write_masstable(splitext(output)[1]*"_mass"*splitext(output)[2], masstable)
+
+        # Derive systematic uncertainty on cum_sfh, mean_MH by simply taking the extrema
+        # of the results for each combination of inputs
+        rtable = Table(tables...) # concatenate tables from results
+        cnames = columnnames(rtable)
+        cum_sfh_lower_sys = map(minimum,
+                                getproperties(rtable, cnames[findall(Base.Fix1(occursin, "cum_sfh_lower"), string.(cnames))]))
+        cum_sfh_upper_sys = map(maximum,
+                                getproperties(rtable, cnames[findall(Base.Fix1(occursin, "cum_sfh_upper"), string.(cnames))]))
+        mean_MH_lower_sys = map(minimum,
+                                getproperties(rtable, cnames[findall(Base.Fix1(occursin, "MH_lower"), string.(cnames))]))
+        mean_MH_upper_sys = map(maximum,
+                                getproperties(rtable, cnames[findall(Base.Fix1(occursin, "MH_upper"), string.(cnames))]))
+
+        final_table = Table(Table(logAge_lower=logAge_l, 
+                                logAge_upper=logAge_u,
+                                cum_sfh_lower_sys=cum_sfh_lower_sys,
+                                cum_sfh_upper_sys=cum_sfh_upper_sys,
+                                MH_lower_sys=mean_MH_lower_sys,
+                                MH_upper_sys=mean_MH_upper_sys),
+                            rtable)
+        # If output::AbstractString, will try to write final_table to output
+        write_systable(output, final_table)
+        return (results=results, templates=templates, logAge=logAge, MH=MH, 
+                table=final_table)
+    finally
+        BLAS.set_num_threads(blas_threads)
+        println(BLAS.get_num_threads())
     end
-    @info "SFH fits complete; measuring statistics"
-    masstable = Table(name = vec([gridname(i) * "_" * gridname(j) for i=tracklibs, j=bclibs]),
-                      mstar_lower = birth_masses[:,1], mstar = birth_masses[:,2], mstar_upper = birth_masses[:,3])
-    write_masstable(splitext(output)[1]*"_mass"*splitext(output)[2], masstable)
-
-    # Derive systematic uncertainty on cum_sfh, mean_MH by simply taking the extrema
-    # of the results for each combination of inputs
-    rtable = Table(tables...) # concatenate tables from results
-    cnames = columnnames(rtable)
-    cum_sfh_lower_sys = map(minimum,
-                            getproperties(rtable, cnames[findall(Base.Fix1(occursin, "cum_sfh_lower"), string.(cnames))]))
-    cum_sfh_upper_sys = map(maximum,
-                            getproperties(rtable, cnames[findall(Base.Fix1(occursin, "cum_sfh_upper"), string.(cnames))]))
-    mean_MH_lower_sys = map(minimum,
-                            getproperties(rtable, cnames[findall(Base.Fix1(occursin, "MH_lower"), string.(cnames))]))
-    mean_MH_upper_sys = map(maximum,
-                            getproperties(rtable, cnames[findall(Base.Fix1(occursin, "MH_upper"), string.(cnames))]))
-
-    final_table = Table(Table(logAge_lower=logAge_l, 
-                              logAge_upper=logAge_u,
-                              cum_sfh_lower_sys=cum_sfh_lower_sys,
-                              cum_sfh_upper_sys=cum_sfh_upper_sys,
-                              MH_lower_sys=mean_MH_lower_sys,
-                              MH_upper_sys=mean_MH_upper_sys),
-                        rtable)
-    # If output::AbstractString, will try to write final_table to output
-    write_systable(output, final_table)
-    return (results=results, templates=templates, logAge=logAge, MH=MH, 
-            table=final_table)
 end
 
 end # module
