@@ -230,7 +230,6 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
     BLAS.set_num_threads(1) # Set BLAS threads to 1 for more efficient solves
 
     try # try-finally to make sure BLAS threads revert after solves
-        println(BLAS.get_num_threads())
         nsolutions = length(tracklibs) * length(bclibs)
         results = Vector{SFH.CompositeBFGSResult}(undef, nsolutions)
         templates = Vector{Vector{Matrix{Float64}}}(undef, nsolutions)
@@ -343,7 +342,6 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                 table=final_table)
     finally
         BLAS.set_num_threads(blas_threads)
-        println(BLAS.get_num_threads())
     end
 end
 
