@@ -5,7 +5,7 @@ export plot_cmd_residuals
 
 import StarFormationHistories as SFH
 using CairoMakie
-using StatsBase: fit, Histogram
+using StatsBase: fit, Histogram, quantile
 
 parse_xcolor(xcolor) = join(xcolor, " - ")
 parse_xcolor(xcolor::AbstractString) = string(xcolor)
@@ -24,7 +24,7 @@ end
 
 function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractString, 
                             galaxy_name::AbstractString, output_file::AbstractString; 
-                            idx::Int=1, normalize_value::Number=1)
+                            idx::Int=1, normalize_value::Number=1, c_clim=nothing, d_clim=nothing)
     xcolor = parse_xcolor(xcolor)
     coeffs = SFH.calculate_coeffs(result.results[idx], result.logAge[idx], result.MH[idx])
     model_hess = sum(coeffs .* result.templates[idx] ./ normalize_value)
@@ -39,7 +39,7 @@ function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractSt
     # Create figure and axes
     figsize = (750, 750)
     fig = Figure(size = figsize)
-    axs = [Axis(fig[i, j], xlabel = xcolor, ylabel = yfilter, xgridvisible = false, ygridvisible = false, xtickalign=1, xminortickalign=1, ytickalign=1, yminortickalign=1, xticksmirrored = true, yticksmirrored = true) for (i, j) in ((1, 1), (1, 2), (2, 1), (2, 2))]
+    axs = [Axis(fig[i, j], xlabel = xcolor, ylabel = yfilter, xgridvisible = false, ygridvisible = false, xtickalign=1, xminortickalign=1, ytickalign=1, yminortickalign=1, xticksmirrored = false, yticksmirrored = false) for (i, j) in ((1, 1), (1, 2), (2, 1), (2, 2))]
     colgap!(fig.layout, 0)
     rowgap!(fig.layout, 0)
 
@@ -56,13 +56,27 @@ function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractSt
     textlabel!(axs[2], 0.02, 0.82; text = "b) $galaxy_name Model", tl_kws...) # , align = (:left, :top)
 
     # Panel c: Data - Model
-    hm3 = heatmap!(axs[3], data.edges[1], data.edges[2], data.weights .- model_hess;
-                colormap = :seismic, colorrange = (-50, 50))
+    cmd_diff = data.weights .- model_hess
+    hm3_crange = if !isnothing(c_clim)
+        c_clim
+    else
+        cr = floor(quantile(cmd_diff[abs.(cmd_diff) .> 1], 0.999) / 10) * 10
+        (-cr, cr)
+    end
+    hm3 = heatmap!(axs[3], data.edges[1], data.edges[2], data.weights .- model_hess; colormap = :seismic, colorrange = hm3_crange)
     textlabel!(axs[3], 0.02, 0.82; text = "c) Data - Model", tl_kws...) # , align = (:left, :top)
 
     # Panel d: Significance
+    hm4_crange = if !isnothing(d_clim)
+        d_clim
+    else
+        cr = quantile(abs.(signif[isfinite.(signif) .&& signif .> 0]), 0.85) # floor(quantile(abs.(signif[isfinite.(signif) .&& signif .> 0]), 0.5) / 10) * 10
+        (-cr, cr)
+    end
     hm4 = heatmap!(axs[4], data.edges[1], data.edges[2], signif;
-                colormap = :seismic, colorrange = (-15, 15))
+                colormap = :seismic, 
+                colorrange = hm4_crange)
+                # colorrange = (-15, 15))
     textlabel!(axs[4], 0.02, 0.82; text = "d) Residual\nSignificance", tl_kws...) # , align = (:left, :top)
 
     # Format axes
@@ -72,26 +86,15 @@ function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractSt
     # Colorbars
     hm1_ticks = 0:floor(Int, log10(maximum(data.weights)))
     hm1_ticks = (exp10.(hm1_ticks), [L"10^%$i" for i in hm1_ticks])
-    # Colorbar(fig, hm1, vertical = false, minorticksvisible = true, bbox=reposition_bbox(axs[1].scene.viewport, -20, 0),
-    #          ticks = hm1_ticks, width=225,
-    #          alignmode = Outside(10), halign = :center, valign = :top, flipaxis = false, size = 15)
-    # Colorbar(fig, hm2, vertical = false, minorticksvisible = true, bbox=reposition_bbox(axs[2].scene.viewport, -20, 0), 
-    #          ticks = hm1_ticks, width=225,
-    #          alignmode = Outside(10), halign = :center, valign = :top, flipaxis = false, size = 15)
-    # Colorbar(fig, hm3, vertical = false, minorticksvisible = true, bbox=reposition_bbox(axs[3].scene.viewport, -20, 0), width=225,
-    #          alignmode = Outside(10), halign = :center, valign = :top, flipaxis = false, size = 15)
-    # Colorbar(fig, hm4, vertical = false, minorticksvisible = true, bbox=reposition_bbox(axs[4].scene.viewport, -20, 0), width=225,
-    #          alignmode = Outside(10), halign = :center, valign = :top, flipaxis = false, size = 15)
     hm_vec = (hm1, hm2, hm3, hm4)
     for i in eachindex(hm_vec)
-        kws = Dict(:vertical => false, :minorticksvisible => true, :bbox => reposition_bbox(axs[i].scene.viewport, -20, 0), 
+        kws = Dict(:vertical => false, :bbox => reposition_bbox(axs[i].scene.viewport, -30, 9),
                    :width => 225, :alignmode => Outside(10), :halign => :center, :valign => :top, :flipaxis => false, :size => 15)
         cb = if i == 1 || i == 2
-            Colorbar(fig, hm_vec[i]; ticks = hm1_ticks, kws...)
+            Colorbar(fig, hm_vec[i]; ticks = hm1_ticks, minorticksvisible = true, kws...)
         else
-            Colorbar(fig, hm_vec[i]; kws...)
+            Colorbar(fig, hm_vec[i]; ticks = LinearTicks(3), minorticksvisible = false, kws...)
         end
-        cb.axis.attributes[:background_color] = :white
     end
 
     # Shared axis limits and ticks
