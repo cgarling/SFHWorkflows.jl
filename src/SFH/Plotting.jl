@@ -1,11 +1,13 @@
 """Module containing functions to plot the results of SFH fits."""
 module Plotting
 
-export plot_cmd_residuals
+export plot_cmd_residuals, plot_cumsfh_sys
 
 import StarFormationHistories as SFH
+using ArgCheck: @argcheck, @check
 using CairoMakie
 using StatsBase: fit, Histogram, quantile
+using TypedTables: columnnames
 
 parse_xcolor(xcolor) = join(xcolor, " - ")
 parse_xcolor(xcolor::AbstractString) = string(xcolor)
@@ -22,12 +24,17 @@ function reposition_bbox(rect_obs::Observable{Makie.HyperRectangle{2, Int64}}, d
     end
 end
 
+function check_result_bounds(result, idx)
+    if !checkbounds(Bool, result.results, idx)
+        println("Invalid index $idx into provided `result`.")
+        throw(BoundsError(result.results, idx))
+    end
+end
+
 function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractString, 
                             galaxy_name::AbstractString, output_file::AbstractString; 
                             idx=1, normalize_value::Number=1, c_clim=nothing, d_clim=nothing)
-    if !checkbounds(Bool, result.results, idx)
-        "Invalid index $idx into provided `result`."
-    end
+    check_result_bounds(result, idx)
     xcolor = parse_xcolor(xcolor)
     coeffs = SFH.calculate_coeffs(result.results[idx...], result.logAge[idx...], result.MH[idx...])
     model_hess = sum(coeffs .* result.templates[idx...] ./ normalize_value)
@@ -107,6 +114,55 @@ function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractSt
     end
     save(output_file, fig)
     return fig, axs
+end
+
+function plot_cumsfh_sys(results, output_file::AbstractString; idx=[1,1])
+    @argcheck length(idx) == 2
+    check_result_bounds(results, idx)
+    # result = result[idx]
+    # logAge = result.logAge[idx]
+    # MH = result.MH[idx]
+    table = results.table
+    x = vcat(table.logAge_lower[1], table.logAge_upper)
+    @. x = exp10(x - 9) # Lookback time in Gyr
+    xticks = [10, 5]
+
+    # Select subtable from results.table
+    # Need to figure out what stellar tracks, BCs were used
+    # in the construction of `results`. Can do this by parsing
+    # the table column names.
+    labels = filter(Base.Fix1(occursin, "sfr_upper"), string.(columnnames(table)))
+    labels = [split(i, "_")[3:end] for i in labels]
+    track_labels = unique(i[1] for i in labels)
+    bc_labels = unique(i[2] for i in labels)
+    @info "Using result for stellar tracks $(track_labels[idx[1]]) and bolometric corrections $(bc_labels[idx[2]])."
+    label = track_labels[idx[1]] * "_" * bc_labels[idx[2]]
+
+    figsize = (750, 450)
+    fig = Figure(size = figsize)
+    ax1 = Axis(fig[1, 1], xlabel = "Lookback Time [Gyr]", ylabel = "Cumulative SF", xticks=xticks)
+    ax2 = Axis(fig[1, 2], xlabel = "Lookback Time [Gyr]", ylabel = "⟨[M/H]⟩", xticks=xticks)
+    xlims!(ax1, maximum(x), -0.1)
+    xlims!(ax2, maximum(x), -0.1)
+    ylims!(ax1, 0.0, 1.1)
+
+    # Helper function for shaded uncertainty
+    function shaded_band!(ax, x, ylow, yhigh; color=:black, alpha=0.3)
+        band!(ax, x, ylow, yhigh, color=color, transparency=true, alpha=alpha)
+    end
+
+    # Plot fiducial SFH
+    p1 = lines!(ax1, x, vcat(getproperty(table, Symbol("cum_sfh_"*label)), 0.0))
+    shaded_band!(ax1, x, vcat(getproperty(table, Symbol("cum_sfh_lower_"*label)), 0.0), vcat(getproperty(table, Symbol("cum_sfh_upper_"*label)), 0.0), color=p1.color)
+    # Plot systematic uncertainty band
+    shaded_band!(ax1, x, vcat(getproperty(table, Symbol("cum_sfh_lower_sys")), 0.0), vcat(getproperty(table, Symbol("cum_sfh_upper_sys")), 0.0), color=:black)
+
+    # Plot AMR
+    p2 = lines!(ax2, x[begin:end-1], getproperty(table, Symbol("MH_"*label)))
+    shaded_band!(ax2, x[begin:end-1], getproperty(table, Symbol("MH_lower_"*label)), getproperty(table, Symbol("MH_upper_"*label)), color=p2.color)
+    shaded_band!(ax2, x[begin:end-1], getproperty(table, Symbol("MH_lower_sys")), getproperty(table, Symbol("MH_upper_sys")), color=:black)
+    save(output_file, fig)
+    return fig, (ax1, ax2)
 end
 
 end # module

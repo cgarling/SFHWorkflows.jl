@@ -12,7 +12,8 @@ set_theme!(theme_latexfonts();
                 # yticks=Makie.WilkinsonTicks(5; k_min=5, k_max=5)))
                 # xminorticks=Makie.IntervalsBetween(5),
                 xminorticksvisible=true),
-            Scatter = (strokecolor=:black, strokewidth=1))
+        Scatter = (strokecolor=:black, strokewidth=1),
+        Lines   = (linewidth=3,))
                 # xminorgridvisible=true, 
                 # yminorgridvisible=true))
 
