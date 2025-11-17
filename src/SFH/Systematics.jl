@@ -230,29 +230,28 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
     BLAS.set_num_threads(1) # Set BLAS threads to 1 for more efficient solves
 
     try # try-finally to make sure BLAS threads revert after solves
-        nsolutions = length(tracklibs) * length(bclibs)
-        results = Vector{SFH.CompositeBFGSResult}(undef, nsolutions)
-        templates = Vector{Vector{Matrix{Float64}}}(undef, nsolutions)
-        logAge = Vector{Vector{Float64}}(undef, nsolutions) # These should be the same for every solution
-        MH = Vector{Vector{Float64}}(undef, nsolutions)     # These should be the same for every solution
-        birth_masses = Matrix{Float64}(undef, nsolutions, 3)
+        n, m = length(tracklibs), length(bclibs)
+        results = Matrix{SFH.CompositeBFGSResult}(undef, n, m)
+        templates = Matrix{Vector{Matrix{Float64}}}(undef, n, m)
+        logAge = Matrix{Vector{Float64}}(undef, n, m) # These should be the same for every solution
+        MH = Matrix{Vector{Float64}}(undef, n, m)     # These should be the same for every solution
+        birth_masses = Array{Float64}(undef, n, m, 3)
         # present_masses = Matrix{Float64}(undef, nsolutions, 3)
-        tables = Vector{Table}(undef, nsolutions)
+        tables = Matrix{Table}(undef, n, m)
 
         @info "Entering threaded SFH loop"
         Threads.@threads for i in eachindex(tracklibs)
             tracklib = tracklibs[i]
             Threads.@threads for j in eachindex(bclibs)
                 bclib = bclibs[j]
-                ind = j + ((i-1) * length(bclibs)) # index into result for (i,j)
                 fit_result = fit_sfh(MH_model0, disp_model0, mstar, data, tracklib, bclib, xstrings,
                                     ystring, dmod, Av, err_funcs,
                                     complete_funcs, bias_funcs, imf, unique_MH, unique_logAge, edges; normalize_value=normalize_value,
                                     binary_model=binary_model, imf_mean=imf_mean, T_max=T_max)
-                results[ind] = fit_result[1]
-                templates[ind] = fit_result.templates
-                logAge[ind] = fit_result.logAge
-                MH[ind] = fit_result.MH
+                results[i,j] = fit_result[1]
+                templates[i,j] = fit_result.templates
+                logAge[i,j] = fit_result.logAge
+                MH[i,j] = fit_result.MH
 
                 coeffs = SFH.calculate_coeffs(fit_result[1], fit_result.logAge, fit_result.MH) .* normalize_value
                 ul, cum_sfh, sfr, mean_MH = SFH.calculate_cum_sfr(coeffs, fit_result.logAge, fit_result.MH, T_max; sorted=true)
@@ -286,7 +285,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                 end
 
                 # Write birth masses into output array
-                birth_masses[ind, :] .= (SFH.integrate_sfr(logAge_l, logAge_u, quantile_results[2][:, i]) for i in 1:3)
+                birth_masses[i, j, :] .= (SFH.integrate_sfr(logAge_l, logAge_u, quantile_results[2][:, ii]) for ii in 1:3)
 
                 # The complicated @eval is necessary because TypedTables.Table cannot be constructed
                 # from separate data and column names
@@ -303,7 +302,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                 # colnames = Tuple(Symbol(x, ind) for x in (:sfr_lower, :sfr, :sfr_upper, :cum_sfh_lower, :cum_sfh, :cum_sfh_upper, :MH_lower, :MH, :MH_upper))
                 colnames = Tuple(Symbol(x * "_" * gridname(tracklib) * "_" * gridname(bclib)) for x in ("sfr_lower", "sfr", "sfr_upper", "cum_sfh_lower", "cum_sfh", "cum_sfh_upper", "MH_lower", "MH", "MH_upper"))
                 datacolumns = (quantile_results[2][:,begin], sfr, quantile_results[2][:,end], quantile_results[1][:,begin], cum_sfh, quantile_results[1][:,end], quantile_results[3][:,begin], mean_MH, quantile_results[3][:,end])
-                tables[ind] = Table(NamedTuple{colnames}(datacolumns))
+                tables[i,j] = Table(NamedTuple{colnames}(datacolumns))
 
                 # Try Tables.MatrixTable for more efficient storage
                 # doesn't seem any more efficient
@@ -313,7 +312,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
         end
         @info "SFH fits complete; measuring statistics"
         masstable = Table(name = vec([gridname(i) * "_" * gridname(j) for i=tracklibs, j=bclibs]),
-                        mstar_lower = birth_masses[:,1], mstar = birth_masses[:,2], mstar_upper = birth_masses[:,3])
+                        mstar_lower = vec(birth_masses[:,:,1]), mstar = vec(birth_masses[:,:,2]), mstar_upper = vec(birth_masses[:,:,3]))
         write_masstable(splitext(output)[1]*"_mass"*splitext(output)[2], masstable)
 
         # Derive systematic uncertainty on cum_sfh, mean_MH by simply taking the extrema
