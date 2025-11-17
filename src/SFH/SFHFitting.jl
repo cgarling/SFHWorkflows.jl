@@ -3,9 +3,11 @@ module SFHFitting
 
 export fit_sfh
 
+using BolometricCorrections: gridname
 import StarFormationHistories as SFH
 using ArgCheck: @argcheck, @check
 using DelimitedFiles: readdlm
+using StatsBase: Histogram
 
 # Includes
 include("Parsing.jl") # Code to parse configuration file
@@ -17,6 +19,36 @@ using .Systematics
 include("Plotting.jl")
 using .Plotting
 
+function write_histogram(hist::Histogram, filename::String)
+    @argcheck length(hist.edges) == 2
+    @argcheck ndims(hist.weights) == 2
+    open(filename, "w") do io
+        # Write bin edges: each dimension on its own line
+        println(io, join(collect(hist.edges[1]), " "))
+        println(io, join(collect(hist.edges[2]), " "))
+
+        # Write weights: each row of the 2D array on its own line
+        for row in eachrow(hist.weights)
+            println(io, join(row, " "))
+        end
+    end
+end
+
+function read_histogram(filename::String)
+    lines = readlines(filename)
+
+    # Parse bin edges from first two lines
+    edges1 = parse.(Float64, split(lines[1]))
+    edges2 = parse.(Float64, split(lines[2]))
+
+    # Parse weights from remaining lines
+    weights_data = lines[3:end]
+    weights = [parse.(Float64, split(line)) for line in weights_data]
+    weights_array = reduce(vcat, [reshape(row, 1, :) for row in weights])
+
+    # Construct histogram
+    return Histogram((edges1, edges2), weights_array)
+end
 
 # Top-level functions
 function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters, xstrings, ystring, edges,
@@ -33,6 +65,17 @@ function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters, xstr
     h = SFH.bin_cmd(view(data, :, xidxs[1]) .- view(data, :, xidxs[2]), view(data, :, yidx); edges=edges)
     out_file = joinpath(output_path, output_filename)
     result = systematics(MH_model0, disp_model0, Mstar, vec(h.weights), stellar_tracks, bcs, xstrings, ystring, dmod, Av, err, completeness, bias, imf, MH, logAge, edges; binary_model=binary_model, output=out_file)
+    # Write histograms to files
+    write_histogram(h, joinpath(output_path, splitext(output_filename)[1]*"_obshist.txt"))
+    for i in eachindex(stellar_tracks)
+        for j in eachindex(bcs)
+            # Construct best-fit model histogram
+            coeffs = SFH.calculate_coeffs(result.results[1], result.logAge[1], result.MH[1])
+            model_hess = sum(coeffs .* result.templates[1]) #  ./ normalize_value)
+            fname = joinpath(output_path, splitext(output_filename)[1]*"_modelhist_"*gridname(stellar_tracks[i])*"_"*gridname(bcs[j])*".txt")
+            write_histogram(Histogram(edges, model_hess), fname)
+        end
+    end
     return result, h
 end
 
