@@ -24,10 +24,13 @@ end
 
 function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractString, 
                             galaxy_name::AbstractString, output_file::AbstractString; 
-                            idx::Int=1, normalize_value::Number=1, c_clim=nothing, d_clim=nothing)
+                            idx=1, normalize_value::Number=1, c_clim=nothing, d_clim=nothing)
+    if !checkbounds(Bool, result.results, idx)
+        "Invalid index $idx into provided `result`."
+    end
     xcolor = parse_xcolor(xcolor)
-    coeffs = SFH.calculate_coeffs(result.results[idx], result.logAge[idx], result.MH[idx])
-    model_hess = sum(coeffs .* result.templates[idx] ./ normalize_value)
+    coeffs = SFH.calculate_coeffs(result.results[idx...], result.logAge[idx...], result.MH[idx...])
+    model_hess = sum(coeffs .* result.templates[idx...] ./ normalize_value)
     # Significance = Residual / σ; sometimes called Pearson residual
     signif = (data.weights .- model_hess) ./
             sqrt.(model_hess)
@@ -103,6 +106,7 @@ function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractSt
         # hidespines!(ax, :t, :r)
     end
     save(output_file, fig)
+    return fig, axs
 end
 
 end # module
