@@ -135,7 +135,7 @@ function plot_cumsfh_sys(results, output_file::AbstractString; idx=[1,1])
     labels = [split(i, "_")[3:end] for i in labels]
     track_labels = unique(i[1] for i in labels)
     bc_labels = unique(i[2] for i in labels)
-    @info "Using result for stellar tracks $(track_labels[idx[1]]) and bolometric corrections $(bc_labels[idx[2]])."
+    @info "Plotting cumulative SFH result for stellar tracks $(track_labels[idx[1]]) and bolometric corrections $(bc_labels[idx[2]])."
     label = track_labels[idx[1]] * "_" * bc_labels[idx[2]]
 
     figsize = (750, 450)

@@ -13,7 +13,7 @@ set_theme!(theme_latexfonts();
                 # xminorticks=Makie.IntervalsBetween(5),
                 xminorticksvisible=true),
         Scatter = (strokecolor=:black, strokewidth=1),
-        Lines   = (linewidth=3,))
+        Lines   = (linewidth=5,))
                 # xminorgridvisible=true, 
                 # yminorgridvisible=true))
 
