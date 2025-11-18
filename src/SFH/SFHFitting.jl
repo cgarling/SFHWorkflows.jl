@@ -66,13 +66,14 @@ function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters, xstr
     out_file = joinpath(output_path, output_filename)
     result = systematics(MH_model0, disp_model0, Mstar, vec(h.weights), stellar_tracks, bcs, xstrings, ystring, dmod, Av, err, completeness, bias, imf, MH, logAge, edges; binary_model=binary_model, output=out_file)
     # Write histograms to files
-    write_histogram(h, joinpath(output_path, splitext(output_filename)[1]*"_obshess.txt"))
+    ext = splitext(output_filename)[2]
+    write_histogram(h, joinpath(output_path, splitext(output_filename)[1]*"_obshess"*ext))
     for i in eachindex(stellar_tracks)
         for j in eachindex(bcs)
             # Construct best-fit model histogram
             coeffs = SFH.calculate_coeffs(result.results[i,j], result.logAge[i,j], result.MH[i,j])
             model_hess = sum(coeffs .* result.templates[i,j]) #  ./ normalize_value)
-            fname = joinpath(output_path, splitext(output_filename)[1]*"_modelhess_"*gridname(stellar_tracks[i])*"_"*gridname(bcs[j])*".txt")
+            fname = joinpath(output_path, splitext(output_filename)[1]*"_modelhess_"*gridname(stellar_tracks[i])*"_"*gridname(bcs[j])*ext)
             write_histogram(Histogram(edges, model_hess), fname)
         end
     end
