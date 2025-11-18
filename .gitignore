@@ -26,6 +26,7 @@ Manifest.toml
 # IPython notebook temporary files
 .ipynb_checkpoints
 
+examples/results
 examples/*.html
 examples/*.pdf
 
