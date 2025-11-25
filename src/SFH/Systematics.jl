@@ -83,7 +83,7 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
                    dmod, Av, err_funcs, complete_funcs, bias_funcs, imf,
                    unique_MH, unique_logAge, edges;
                    normalize_value::Number=1, binary_model::SFH.AbstractBinaryModel = SFH.NoBinaries(),
-                   imf_mean::Number = SFH.mean(imf))
+                   imf_mean::Number = SFH.mean(imf), dtype::Type{<:AbstractFloat}=Float64)
 
     # Figure out the filters we want to use
     ysymb, xsymbs = mag_select(bclib, ystring, xstrings)
@@ -100,8 +100,8 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
     # Convert unique_MH (defined for the tracklib chemistry) to the bclib chemistry
     unique_bc_MH = convert_MH.(unique_MH, Ref(tracklib), Ref(bclib))
 
-    templates = Vector{Matrix{Float64}}(undef, length(unique_logAge) * length(unique_MH))
-    template_logAge = Vector{Float64}(undef, length(templates))
+    templates = Vector{Matrix{dtype}}(undef, length(unique_logAge) * length(unique_MH))
+    template_logAge = Vector{dtype}(undef, length(templates))
     template_MH = similar(template_logAge)
     # @threads for (i, (mh, logage)) in collect(enumerate(Iterators.product(unique_MH, unique_logAge))) # issorted(mdf_template_logAge) == true
     Threads.@threads for i in eachindex(unique_MH)
@@ -132,8 +132,8 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
             logage = unique_logAge[j]
             ind = j + ((i-1) * length(unique_logAge)) # index into templates and other buffers for (i,j)
             iso = isochrone(tracklib, bct, logage, tracklib_mh)
-            iso_mags = [getproperty(iso, k) for k in iso_symb] # (xsymb, ysymbs...)]
-            m_ini = iso.m_ini
+            iso_mags = [convert(Vector{dtype}, getproperty(iso, k)) for k in iso_symb] # (xsymb, ysymbs...)]
+            m_ini = convert(Vector{dtype}, iso.m_ini)
             templates[ind] = SFH.partial_cmd_smooth(m_ini, iso_mags, err_funcs, yidx, xidxs, imf, 
                                                     complete_funcs, bias_funcs; 
                                                     dmod=dmod, normalize_value=normalize_value, edges=edges, 
@@ -196,13 +196,13 @@ function fit_sfh(MH_model0::SFH.AbstractMetallicityModel,
                  dmod, Av, err_funcs, complete_funcs, bias_funcs, imf,
                  unique_MH, unique_logAge, edges; 
                  normalize_value::Number=1, binary_model::SFH.AbstractBinaryModel=SFH.NoBinaries(),
-                 imf_mean::Number=SFH.mean(imf), T_max::Number=13.7)
+                 imf_mean::Number=SFH.mean(imf), T_max::Number=13.7, dtype::Type{<:AbstractFloat}=Float64)
 
     @argcheck mstar > 0
     # Construct templates
     all_templates = templates(tracklib, bclib, xstrings, ystring, dmod, Av, err_funcs, complete_funcs, bias_funcs,
                               imf, unique_MH, unique_logAge, edges;
-                              normalize_value=normalize_value, binary_model=binary_model, imf_mean=imf_mean)
+                              normalize_value=normalize_value, binary_model=binary_model, imf_mean=imf_mean, dtype=dtype)
     result = SFH.fit_sfh(MH_model0, disp_model0, SFH.stack_models(all_templates.templates), vec(data), all_templates.logAge, all_templates.MH;
                          x0=SFH.construct_x0_mdf(all_templates.logAge, T_max; normalize_value=mstar / normalize_value))
     return merge((result=result,), all_templates)
@@ -218,7 +218,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                      unique_MH, unique_logAge, edges; 
                      normalize_value::Number=1, binary_model::SFH.AbstractBinaryModel=SFH.NoBinaries(),
                      imf_mean::Number=SFH.mean(imf), T_max::Number=13.7, sfr_floor::Number=1e-10,
-                     output::Union{AbstractString, Nothing}=nothing)
+                     output::Union{AbstractString, Nothing}=nothing, dtype::Type{<:AbstractFloat}=Float64)
 
     @argcheck length(tracklibs) >= 1
     @argcheck length(bclibs) >= 1
@@ -232,10 +232,10 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
     try # try-finally to make sure BLAS threads revert after solves
         n, m = length(tracklibs), length(bclibs)
         results = Matrix{SFH.CompositeBFGSResult}(undef, n, m)
-        templates = Matrix{Vector{Matrix{Float64}}}(undef, n, m)
-        logAge = Matrix{Vector{Float64}}(undef, n, m) # These should be the same for every solution
-        MH = Matrix{Vector{Float64}}(undef, n, m)     # These should be the same for every solution
-        birth_masses = Array{Float64}(undef, n, m, 3)
+        templates = Matrix{Vector{Matrix{dtype}}}(undef, n, m)
+        logAge = Matrix{Vector{dtype}}(undef, n, m) # These should be the same for every solution
+        MH = Matrix{Vector{dtype}}(undef, n, m)     # These should be the same for every solution
+        birth_masses = Array{dtype}(undef, n, m, 3)
         # present_masses = Matrix{Float64}(undef, nsolutions, 3)
         tables = Matrix{Table}(undef, n, m)
 
@@ -247,7 +247,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                 fit_result = fit_sfh(MH_model0, disp_model0, mstar, data, tracklib, bclib, xstrings,
                                     ystring, dmod, Av, err_funcs,
                                     complete_funcs, bias_funcs, imf, unique_MH, unique_logAge, edges; normalize_value=normalize_value,
-                                    binary_model=binary_model, imf_mean=imf_mean, T_max=T_max)
+                                    binary_model=binary_model, imf_mean=imf_mean, T_max=T_max, dtype=dtype)
                 results[i,j] = fit_result[1]
                 templates[i,j] = fit_result.templates
                 logAge[i,j] = fit_result.logAge

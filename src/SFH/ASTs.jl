@@ -19,9 +19,10 @@ using TypedTables: Table
 # using DataFrames: DataFrame
 
 function process_asts(input, output, badval::Number, minerr::Number, maxerr::Number)
+    dtype = promote_type(eltype(input), eltype(output))
     ast_table = Table(input = input, output = output)
     ast_bin_edges = range(round(minimum(input), RoundUp; digits=1),
-                          round(maximum(input), RoundDown; digits=1); step=0.3)
+                          round(maximum(input), RoundDown; digits=1); step=dtype(0.3))
     # Don't care about warnings issued by process_ASTs, but do want to see
     # any errors
     with_logger(ConsoleLogger(Error)) do
@@ -76,8 +77,9 @@ function plot_ast_residual(input, output, itps, mag_label, err_range, badval::Nu
 end
 
 # Processes AST file and returns completeness, error, bias results
-function process_ast_file(astfile::AbstractString, filters, badval::Number, minerr::Number, maxerr::Number, plot_diagnostics::Bool, output_path::AbstractString)
-    astmags = readdlm(astfile, ' ', Float64)
+function process_ast_file(astfile::AbstractString, filters, badval::Number, minerr::Number, maxerr::Number, 
+                          plot_diagnostics::Bool, output_path::AbstractString; dtype::Type{<:AbstractFloat}=Float64)
+    astmags = readdlm(astfile, ' ', dtype)
     # @check iseven(size(astmags, 2))
     # nfilters = size(astmags, 2) ÷ 2
     # @check nfilters == length(filters) "Mismatch between `length(filters)` and number of columns in AST file $astfile."

@@ -1,5 +1,6 @@
 data:
   path: /home/cgarling/Work/UVA/Projects/SFH/aquarius/data # Common path prefix to add to photometry_file and ast_file
+  fp: Float64 # Data type to parse floating point numbers as; either Float32 or Float64 (Float32 generally faster, rare convergence issues)
   photometry:
       photometry_file: phot.dat # One column per filter, apparent magnitudes
       filters: F475W, F814W # Filter name for each column in photometry_file, comma separated

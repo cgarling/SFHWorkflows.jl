@@ -54,17 +54,18 @@ end
 function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters, xstrings, ystring, edges,
                  MH_model0::SFH.AbstractMetallicityModel, disp_model0::SFH.AbstractDispersionModel, Mstar::Number, stellar_tracks, bcs,
                  dmod::Number, Av::Number, imf, MH, logAge, binary_model::SFH.AbstractBinaryModel, output_filename::AbstractString; 
-                 badval::Number=99.999, minerr::Number=0.0, maxerr::Number=0.2, plot_diagnostics::Bool=true, output_path::AbstractString=".") # filters=("mag1", "mag2")
+                 badval::Number=99.999, minerr::Number=0.0, maxerr::Number=0.2, plot_diagnostics::Bool=true, output_path::AbstractString=".",
+                 dtype::Type{<:AbstractFloat}=Float64) # filters=("mag1", "mag2")
     @argcheck length(xstrings) == 2
     @argcheck Mstar > 0
     filters = string.(filters)
-    completeness, bias, err = process_ast_file(astfile, filters, badval, minerr, maxerr, plot_diagnostics, output_path)
-    data = readdlm(obsfile, ' ', Float64)
+    completeness, bias, err = process_ast_file(astfile, filters, badval, minerr, maxerr, plot_diagnostics, output_path; dtype=dtype)
+    data = readdlm(obsfile, ' ', dtype)
     yidx = findfirst(==(ystring), filters)
     xidxs = [findfirst(==(x), filters) for x in xstrings]
     h = SFH.bin_cmd(view(data, :, xidxs[1]) .- view(data, :, xidxs[2]), view(data, :, yidx); edges=edges)
     out_file = joinpath(output_path, output_filename)
-    result = systematics(MH_model0, disp_model0, Mstar, vec(h.weights), stellar_tracks, bcs, xstrings, ystring, dmod, Av, err, completeness, bias, imf, MH, logAge, edges; binary_model=binary_model, output=out_file)
+    result = systematics(MH_model0, disp_model0, Mstar, vec(h.weights), stellar_tracks, bcs, xstrings, ystring, dmod, Av, err, completeness, bias, imf, MH, logAge, edges; binary_model=binary_model, output=out_file, dtype=dtype)
     # Write histograms to files
     ext = splitext(output_filename)[2]
     write_histogram(h, joinpath(output_path, splitext(output_filename)[1]*"_obshess"*ext))
@@ -80,7 +81,7 @@ function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters, xstr
     return result, h
 end
 
-fit_sfh(@nospecialize(config::NamedTuple)) = fit_sfh(config.phot_file, config.ast_file, config.filters, config.xstrings, config.ystring, (config.xbins, config.ybins), config.MH_model0, config.disp_model0, config.Mstar, config.stellar_tracks, config.bcs, config.dmod, config.Av, config.imf, config.MH, config.logAge, config.binary_model, config.output_filename; badval=config.badval, minerr=config.minerr, maxerr=config.maxerr, plot_diagnostics=config.plot_diagnostics, output_path=config.output_path)
+fit_sfh(@nospecialize(config::NamedTuple)) = fit_sfh(config.phot_file, config.ast_file, config.filters, config.xstrings, config.ystring, (config.xbins, config.ybins), config.MH_model0, config.disp_model0, config.Mstar, config.stellar_tracks, config.bcs, config.dmod, config.Av, config.imf, config.MH, config.logAge, config.binary_model, config.output_filename; badval=config.badval, minerr=config.minerr, maxerr=config.maxerr, plot_diagnostics=config.plot_diagnostics, output_path=config.output_path, dtype=config.dtype)
 fit_sfh(config_file::AbstractString) = fit_sfh(parse_config(config_file))
 
 
