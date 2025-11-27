@@ -103,6 +103,9 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
     templates = Vector{Matrix{Float64}}(undef, length(unique_logAge) * length(unique_MH))
     template_logAge = Vector{Float64}(undef, length(templates))
     template_MH = similar(template_logAge)
+    template_isomags = Vector{Vector{Vector{Float64}}}(undef, length(template_logAge))
+    template_mini = Vector{Vector{Float64}}(undef, length(templates))
+
     # @threads for (i, (mh, logage)) in collect(enumerate(Iterators.product(unique_MH, unique_logAge))) # issorted(mdf_template_logAge) == true
     Threads.@threads for i in eachindex(unique_MH)
     # for i in eachindex(unique_MH)
@@ -140,6 +143,8 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
                                                     mean_mass=imf_mean, binary_model=binary_model).weights
             template_logAge[ind] = logage
             template_MH[ind] = mh
+            template_isomags[ind] = iso_mags
+            template_mini[ind] = m_ini
         end
     end
     # Sort the template_logAge and template_MH so we have a guarantee for later
@@ -147,8 +152,10 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
     templates = templates[permidx]
     template_logAge = template_logAge[permidx]
     template_MH = template_MH[permidx]
+    template_isomags = template_isomags[permidx]
+    template_mini = template_mini[permidx]
     # @printf "Number of templates constructed: %i" length(templates)
-    return (templates = templates, logAge = template_logAge, MH = template_MH)
+    return (templates = templates, logAge = template_logAge, MH = template_MH, isomags = template_isomags, mini = template_mini)
 end
 
 # If `fname` has a leading directory and it does not exist, create it
