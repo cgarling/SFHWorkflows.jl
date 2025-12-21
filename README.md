@@ -1,6 +1,14 @@
 # SFHWorkflows.jl
 [StarFormationHistories.jl](https://github.com/cgarling/StarFormationHistories.jl) contains highly modular components for measuring resolved star formation histories from high-precision color magnitude diagrams. This package provides standardized workflows for making these measurements that can be configured and ran from simple YAML configuration files.
 
+## Installation
+This package is registered to the Julia General Registry and can be installed via the package manager with
+
+```julia
+julia> import Pkg
+julia> Pkg.add("SFHWorkflows")
+```
+
 ## Usage
 The main entry point for measuring resolved star formation histories from catalogs of photometry and artificial star tests is `fit_sfh`. This function reads a YAML configuration file that defines all relevant parameters for the fit. An example YAML configuration file is given in `examples/config.yaml`. In this documentation, placeholders like `<output.path>` indicates the value given under the `output` section in the `path` variable of the YAML configuration file. All text files written will use the same file extension as provided in `<output.filename>` for consistency.
 
