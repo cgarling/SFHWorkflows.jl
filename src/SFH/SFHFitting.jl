@@ -59,7 +59,7 @@ function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters, xstr
     @argcheck Mstar > 0
     filters = string.(filters)
     completeness, bias, err = process_ast_file(astfile, filters, badval, minerr, maxerr, plot_diagnostics, output_path)
-    data = readdlm(obsfile, ' ', Float64)
+    data = readdlm(obsfile, Float64)
     yidx = findfirst(==(ystring), filters)
     xidxs = [findfirst(==(x), filters) for x in xstrings]
     h = SFH.bin_cmd(view(data, :, xidxs[1]) .- view(data, :, xidxs[2]), view(data, :, yidx); edges=edges)

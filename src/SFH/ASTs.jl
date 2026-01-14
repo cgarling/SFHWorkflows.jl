@@ -77,7 +77,7 @@ end
 
 # Processes AST file and returns completeness, error, bias results
 function process_ast_file(astfile::AbstractString, filters, badval::Number, minerr::Number, maxerr::Number, plot_diagnostics::Bool, output_path::AbstractString)
-    astmags = readdlm(astfile, ' ', Float64)
+    astmags = readdlm(astfile, Float64)
     # @check iseven(size(astmags, 2))
     # nfilters = size(astmags, 2) ÷ 2
     # @check nfilters == length(filters) "Mismatch between `length(filters)` and number of columns in AST file $astfile."
