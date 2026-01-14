@@ -92,7 +92,7 @@ metallicity: # Options are LinearAMR, LogarithmicAMR, PowerLawMZR, examples belo
 #   beta:
 #     x0: -1.5
 #     free: true
-#   Tmax: 13.7 # Highest valid lookback time, typically the age of the Universe, in units of Gyr.
+#   T_max: 13.7 # Highest valid lookback time, typically the age of the Universe, in units of Gyr.
 #   std: 0.1
 
 # metallicity:
@@ -103,7 +103,7 @@ metallicity: # Options are LinearAMR, LogarithmicAMR, PowerLawMZR, examples belo
 #   beta:
 #     x0: 5e-5
 #     free: true
-#   Tmax: 13.7 # Highest valid lookback time, typically the age of the Universe, in units of Gyr.
+#   T_max: 13.7 # Highest valid lookback time, typically the age of the Universe, in units of Gyr.
 #   std: 0.1
 
 plotting:
