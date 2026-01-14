@@ -1,7 +1,7 @@
 name = "SFHWorkflows"
 uuid = "9f162cfb-b9f3-4dd2-bb0f-c8f5cc5047ef"
 authors = ["cgarling <chris.t.garling@gmail.com> and contributors"]
-version = "1.0.0"
+version = "1.0.1"
 
 [deps]
 ArgCheck = "dce04be8-c92d-5529-be00-80e4d2c0e197"
