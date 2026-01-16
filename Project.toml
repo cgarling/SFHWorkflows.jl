@@ -1,7 +1,7 @@
 name = "SFHWorkflows"
 uuid = "9f162cfb-b9f3-4dd2-bb0f-c8f5cc5047ef"
-authors = ["cgarling <chris.t.garling@gmail.com> and contributors"]
 version = "1.0.1"
+authors = ["cgarling <chris.t.garling@gmail.com> and contributors"]
 
 [deps]
 ArgCheck = "dce04be8-c92d-5529-be00-80e4d2c0e197"
@@ -14,6 +14,7 @@ InitialMassFunctions = "e9251ff4-c148-4db3-bf46-89407750fae0"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 PDFmerger = "3beb2ed1-af7d-458f-b727-6e9beb3586c0"
 PlotUtils = "995b91a9-d308-5afd-9ec6-746e21dbc043"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
@@ -34,6 +35,7 @@ InitialMassFunctions = "0.1"
 LinearAlgebra = "<0.0.1, 1"
 Logging = "<0.0.1, 1"
 Makie = "0.24"
+OrderedCollections = "1"
 PDFmerger = "0.3"
 PlotUtils = "1"
 Printf = "<0.0.1, 1"

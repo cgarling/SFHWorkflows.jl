@@ -4,6 +4,7 @@ module Parsing
 export parse_config
 
 import YAML
+using OrderedCollections: OrderedDict
 using InitialMassFunctions
 using StarFormationHistories: NoBinaries, RandomBinaryPairs, MH_from_Z, dMH_dZ, PowerLawMZR, LinearAMR, LogarithmicAMR, GaussianDispersion
 using StellarTracks: PARSECLibrary, MISTLibrary, BaSTIv1Library, BaSTIv2Library
@@ -164,7 +165,7 @@ function parse_config(file::AbstractString)
     end
 
     config = try
-        YAML.load_file(file)
+        YAML.load_file(file; dicttype=OrderedDict{String, Any})
     catch e
         println("Failed to parse configuration YAML file $file with error: ")
         rethrow(e)
@@ -182,11 +183,23 @@ function parse_config(config::AbstractDict)
             rethrow(e)
         end
     end
+    # Save copy of input config to output path
+    YAML.write_file(joinpath(output_path, "input.yml"), config)
 
     data_path = config["data"]["path"]
     phot_file = joinpath(data_path, config["data"]["photometry"]["photometry_file"])
     ast_file = joinpath(data_path, config["data"]["ASTs"]["ast_file"])
     filters = parse_to_vector(config["data"]["photometry"]["filters"])
+    ystring = config["data"]["binning"]["yfilter"]
+    if ystring ∉ filters
+        error("Invalid configuration: config[\"data\"][\"binning\"][\"yfilter\"] $ystring not found in provided config[\"data\"][\"photometry\"][\"filters\"] $(join(filters, ", ")).")
+    end
+    xstrings = string.(split(strip_whitespace(config["data"]["binning"]["xcolor"]), ","))
+    for xstring in xstrings
+        if xstring ∉ filters
+            error("Invalid configuration: config[\"data\"][\"binning\"][\"xcolor\"] entry $xstring not found in provided config[\"data\"][\"photometry\"][\"filters\"] $(join(filters, ", ")).")
+        end
+    end
     ybins = parse_range(config["data"]["binning"]["ybins"])
     xbins = parse_range(config["data"]["binning"]["xbins"])
     maxerr = get(config["data"]["ASTs"], "maxerr", Inf)::Float64 # If maxerr not provided, use Inf
@@ -201,7 +214,7 @@ function parse_config(config::AbstractDict)
     logAge = eval(Meta.parse(config["stellartracks"]["logAge"]))
     MH = eval(Meta.parse(config["stellartracks"]["MH"]))
 
-    return (phot_file=phot_file, ast_file=ast_file, filters=filters, badval=config["data"]["ASTs"]["badval"], maxerr=maxerr, minerr=minerr, xbins=xbins, ybins=ybins, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0, output_path=output_path, output_filename=config["output"]["filename"], ystring=config["data"]["binning"]["yfilter"], xstrings=string.(split(strip_whitespace(config["data"]["binning"]["xcolor"]), ",")), logAge=logAge, MH=MH)
+    return (phot_file=phot_file, ast_file=ast_file, filters=filters, badval=config["data"]["ASTs"]["badval"], maxerr=maxerr, minerr=minerr, xbins=xbins, ybins=ybins, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0, output_path=output_path, output_filename=config["output"]["filename"], ystring=ystring, xstrings=xstrings, logAge=logAge, MH=MH)
 end
 
 end # module
