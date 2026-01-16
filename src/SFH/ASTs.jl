@@ -90,10 +90,8 @@ function process_ast_file(astfile::AbstractString, filters, badval::Number, mine
     output1 = view(astmags, :, 3) .+ input1
     output2 = view(astmags, :, 4) .+ input2
     # Add badval's back into output
-    bad1 = findall(≈(badval), view(astmags, :, 3))
-    # output1[bad1] .= badval 
-    bad2 = findall(≈(badval), view(astmags, :, 4))
-    # output2[bad2] .= badval
+    bad1 = isapprox.(badval, view(astmags, :, 3))
+    bad2 = isapprox.(badval, view(astmags, :, 4))
     # Require detection in both bands
     bad = bad1 .| bad2
     output1[bad] .= badval
