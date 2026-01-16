@@ -1,6 +1,6 @@
 name = "SFHWorkflows"
 uuid = "9f162cfb-b9f3-4dd2-bb0f-c8f5cc5047ef"
-version = "1.0.1"
+version = "1.0.2"
 authors = ["cgarling <chris.t.garling@gmail.com> and contributors"]
 
 [deps]
