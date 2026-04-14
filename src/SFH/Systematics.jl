@@ -203,7 +203,8 @@ function fit_sfh(MH_model0::SFH.AbstractMetallicityModel,
                  dmod, Av, err_funcs, complete_funcs, bias_funcs, imf,
                  unique_MH, unique_logAge, edges; 
                  normalize_value::Number=1, binary_model::SFH.AbstractBinaryModel=SFH.NoBinaries(),
-                 imf_mean::Number=SFH.mean(imf), T_max::Number=13.7)
+                 imf_mean::Number=SFH.mean(imf), T_max::Number=13.7,
+                 kws...)
 
     @argcheck mstar > 0
     # Construct templates
@@ -211,7 +212,7 @@ function fit_sfh(MH_model0::SFH.AbstractMetallicityModel,
                               imf, unique_MH, unique_logAge, edges;
                               normalize_value=normalize_value, binary_model=binary_model, imf_mean=imf_mean)
     result = SFH.fit_sfh(MH_model0, disp_model0, SFH.stack_models(all_templates.templates), vec(data), all_templates.logAge, all_templates.MH;
-                         x0=SFH.construct_x0_mdf(all_templates.logAge, T_max; normalize_value=mstar / normalize_value))
+                         x0=SFH.construct_x0_mdf(all_templates.logAge, T_max; normalize_value=mstar / normalize_value), kws...)
     return merge((result=result,), all_templates)
 end
 
@@ -225,7 +226,8 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                      unique_MH, unique_logAge, edges; 
                      normalize_value::Number=1, binary_model::SFH.AbstractBinaryModel=SFH.NoBinaries(),
                      imf_mean::Number=SFH.mean(imf), T_max::Number=13.7, sfr_floor::Number=1e-10,
-                     output::Union{AbstractString, Nothing}=nothing)
+                     output::Union{AbstractString, Nothing}=nothing,
+                     kws...)
 
     @argcheck length(tracklibs) >= 1
     @argcheck length(bclibs) >= 1
@@ -254,7 +256,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                 fit_result = fit_sfh(MH_model0, disp_model0, mstar, data, tracklib, bclib, xstrings,
                                     ystring, dmod, Av, err_funcs,
                                     complete_funcs, bias_funcs, imf, unique_MH, unique_logAge, edges; normalize_value=normalize_value,
-                                    binary_model=binary_model, imf_mean=imf_mean, T_max=T_max)
+                                    binary_model=binary_model, imf_mean=imf_mean, T_max=T_max, kws...)
                 results[i,j] = fit_result[1]
                 templates[i,j] = fit_result.templates
                 logAge[i,j] = fit_result.logAge
@@ -320,7 +322,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
         @info "SFH fits complete; measuring statistics"
         masstable = Table(name = vec([gridname(i) * "_" * gridname(j) for i=tracklibs, j=bclibs]),
                         mstar_lower = vec(birth_masses[:,:,1]), mstar = vec(birth_masses[:,:,2]), mstar_upper = vec(birth_masses[:,:,3]))
-        write_masstable(splitext(output)[1]*"_mass"*splitext(output)[2], masstable)
+        write_masstable(isnothing(output) ? nothing : splitext(output)[1]*"_mass"*splitext(output)[2], masstable)
 
         # Derive systematic uncertainty on cum_sfh, mean_MH by simply taking the extrema
         # of the results for each combination of inputs
