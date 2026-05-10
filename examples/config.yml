@@ -36,7 +36,8 @@ stellartracks:
   # "mist" is deprecated as of v1.1.0; use "mistv1" for MIST v1.2 or "mistv2" for MIST v2.5.
   # parsec takes no arguments. 
   # mistv1 takes vvcrit argument, either 0.0 (non-rotating) or 0.4 (rotating).
-  # mistv2 takes vvcrit (0.0 or 0.4) and alpha_fe ([α/Fe], default 0.0).
+  # mistv2 takes vvcrit (0.0 or 0.4) and alpha_fe ([α/Fe], default 0.0; supported values are
+  # −0.2, 0.0, 0.2, 0.4, 0.6).
   # bastiv2 takes several arguments, for valid options see https://cgarling.github.io/StellarTracks.jl/stable
   # alpha_fe: [alpha/Fe], default 0.0
   # canonical: Whether to use models with convective overshooting (false) or without (true), default false
