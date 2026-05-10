@@ -13,8 +13,25 @@ import YAML
 galaxy_name = "Aquarius"
 
 # Here we'll parse the x-axis color label and y-axis magnitude label from the provided config.
-# You can also just hard-code it if you want.
-dict = YAML.load_file(config) # Load config into dictionary so we can access filter names
+# You can also just hard-code it if you want. By default YAML.load_file(file) loads into a
+# basic dictionary (Dict) which does not preserve insertion order; we will use the
+# OrderedDict from the OrderedCollections.jl package so that insertion order is preserved
+# and the keys of `dict` below will be in the same order they appear in the actual config file
+dicttype = Dict{String, Any} # Set fallback as standard dict, overwritten if OrderedCollections.jl cannot be installed
+try
+    using OrderedCollections: OrderedDict
+    global dicttype = OrderedDict{String, Any}
+catch e1
+    try
+        import Pkg
+        Pkg.add("OrderedCollections")
+        using OrderedCollections: OrderedDict
+        global dicttype = OrderedDict{String, Any}
+    catch e2
+        @warn "Error loading OrderedCollections.jl, using standard Dict instead, which does not preserve insertion order."
+    end
+end
+dict = YAML.load_file(config; dicttype=dicttype) # Load config into dictionary so we can access filter names
 xcolor = split(dict["data"]["binning"]["xcolor"], ",")
 xcolor = join(strip_whitespace.(xcolor), " - ") # creates a string like "F475W - F814W" 
 yfilter = dict["data"]["binning"]["yfilter"]    # creates a string like "F814W"
