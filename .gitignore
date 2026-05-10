@@ -27,6 +27,7 @@ Manifest.toml
 .ipynb_checkpoints
 
 examples/results
+examples/old
 examples/*.html
 examples/*.pdf
 
