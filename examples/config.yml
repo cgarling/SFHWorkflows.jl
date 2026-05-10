@@ -31,10 +31,12 @@ binaries:
 
 stellartracks:
   # One entry per stellar track library you want to run the SFH fit with.
-  # Name either parsec, mist, bastiv1, bastiv2 (case insensitive).
-  # Use of bastiv1 (old basti models) is discouraged. 
+  # Name either parsec, mistv1, mistv2, bastiv1, bastiv2 (case insensitive).
+  # Use of bastiv1 (old basti models) is discouraged.
+  # "mist" is deprecated as of v1.1.0; use "mistv1" for MIST v1.2 or "mistv2" for MIST v2.5.
   # parsec takes no arguments. 
-  # mist takes vvcrit argument, either 0.0 (non-rotating) or 0.4 (rotating).
+  # mistv1 takes vvcrit argument, either 0.0 (non-rotating) or 0.4 (rotating).
+  # mistv2 takes vvcrit (0.0 or 0.4) and alpha_fe ([α/Fe], default 0.0).
   # bastiv2 takes several arguments, for valid options see https://cgarling.github.io/StellarTracks.jl/stable
   # alpha_fe: [alpha/Fe], default 0.0
   # canonical: Whether to use models with convective overshooting (false) or without (true), default false
@@ -44,9 +46,13 @@ stellartracks:
   track1:
     name: PARSEC
   track2:
-    name: MIST
+    name: MISTv1
     vvcrit: 0.0
-  track3: 
+  track3:
+    name: MISTv2
+    vvcrit: 0.0
+    alpha_fe: 0.0
+  track4: 
     name: BASTIV2
     alpha_fe: 0.0
     canonical: false
@@ -61,11 +67,15 @@ stellartracks:
 bolometriccorrections:
 # The SFH will be measured for each combination of track (defined above) and bolometric correction library (defined here)
 # See documentation https://cgarling.github.io/BolometricCorrections.jl/stable/ for names of available filtersets
+# "mist" is deprecated as of v1.1.0; use "mistv1" for MIST v1.2 or "mistv2" for MIST v2.5.
   bc1: 
     name: YBC
     filterset: acs_wfc
   bc2: 
-    name: MIST
+    name: MISTv1
+    filterset: acs_wfc
+  bc3:
+    name: MISTv2
     filterset: acs_wfc
 
 properties:

@@ -6,7 +6,7 @@ export systematics, mag_select
 import StarFormationHistories as SFH
 import CSV
 using TypedTables: Table, columnnames, getproperties
-using BolometricCorrections: chemistry, MH, Z, filternames, AbstractBCGrid, AbstractBCTable, MISTBCGrid, gridname
+using BolometricCorrections: chemistry, MH, Z, filternames, AbstractBCGrid, AbstractBCTable, gridname
 using StellarTracks: AbstractTrackLibrary, isochrone
 using ArgCheck: @argcheck
 using Printf: @printf, @sprintf, Format, format
@@ -23,26 +23,52 @@ convert_MH(mh, tracks, bcs) = MH(chemistry(bcs), Z(chemistry(tracks), mh))
 
 """
     (xidx, yidxs) = mag_select(bcgrid::AbstractBCGrid, ystring::Union{AbstractString, Symbol}, xstrings)
-Returns the indices into `filternames(bcgrid)` that correspond to the provided `ystring` and `xstrings` arguments. 
+Returns the keys into `filternames(bcgrid)` as `Symbol`s that correspond to the provided `ystring` and `xstrings` arguments. 
 Used to programmatically determine the proper columns to select from an `AbstractBCGrid` using user-specific filter names.
-```jldoctest
-julia> using BolometricCorrections: MISTBCGrid, filternames
 
-julia> m = MISTBCGrid("hst_acs_wfc")
+```jldoctest mag_select
+julia> using SFHWorkflows.SFHFitting.Systematics: mag_select
+
+julia> using BolometricCorrections: MISTv1BCGrid, filternames
+
+julia> m = MISTv1BCGrid("JWST")
 
 julia> mag_select(m, "F150W", (:F090W, :F150W))
-(6, [2, 6])
+(:F150W, (:F090W, :F150W))
+```
+
+Some BC grids have known idiosyncrasies in their filter naming that can cause problems. For example, the "JWST" filter system in MISTv2 has filters prefixed with "NIRCAM_", which can cause problems with the matching. The `mag_select` function includes some manual overrides for known cases like this, but if you have a BC grid with non-standard filter names that causes problems, please open an issue or submit a PR to add a manual override for your specific case.
+
+```jldoctest mag_select
+julia> using BolometricCorrections: MISTv2BCGrid
+
+julia> mv2 = MISTv2BCGrid("JWST")
+
+julia> mag_select(mv2, "F150W", (:F090W, :F150W))
+(:NIRCAM_F150W, (:NIRCAM_F090W, :NIRCAM_F150W))
 ```
 """
 function mag_select(bcgrid::Union{AbstractBCGrid, AbstractBCTable}, ystring::Union{AbstractString, Symbol}, xstrings)
+
+    # Some BC grids have non-standard filter names that cause problems trying to match the same filter strings
+    # across multiple BCs. An example is JWST in MISTv2, which prefixes all filters like NIRCAM_F150W, so if you
+    # specify "F150W" as the ystring, it is ambiguous to match between "NIRCAM_F150W" and "NIRCAM_F150W2". 
+    # Here we will provide some manual overrides for known cases.
+    function normalize_filter(filt)
+        filt = string(filt)
+        if startswith(filt, "NIRCAM_")
+            return replace(filt, "NIRCAM_" => "")
+        else
+            return filt
+        end
+    end
+
     @argcheck length(xstrings) == 2
     Base.require_one_based_indexing(xstrings)
-    # ystring = lowercase(string(ystring))
-    # xstrings = [lowercase(string(xs)) for xs in xstrings]
-    # filters = [lowercase(string(f)) for f in filternames(bcgrid)]
     ystring = string(ystring)
     xstrings = [string(xs) for xs in xstrings]
-    filters = [string(f) for f in filternames(bcgrid)]
+    original_filters = [string(f) for f in filternames(bcgrid)] # Need to keep these as these are what we eventually want to return
+    filters = normalize_filter.(original_filters) # Apply normalization to filter names for matching
     ymatches = findfirst(==(ystring), filters)
     if !isnothing(ymatches) # Look for exact match first
         yidx = ymatches
@@ -75,7 +101,7 @@ function mag_select(bcgrid::Union{AbstractBCGrid, AbstractBCTable}, ystring::Uni
         end      
     end
     # return yidx, xidxs
-    return Symbol(filters[yidx]), (Symbol(filters[xidxs[1]]), Symbol(filters[xidxs[2]]))
+    return Symbol(original_filters[yidx]), (Symbol(original_filters[xidxs[1]]), Symbol(original_filters[xidxs[2]]))
 end
 
 function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
@@ -108,34 +134,16 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
 
     # @threads for (i, (mh, logage)) in collect(enumerate(Iterators.product(unique_MH, unique_logAge))) # issorted(mdf_template_logAge) == true
     Threads.@threads for i in eachindex(unique_MH)
-    # for i in eachindex(unique_MH)
         mh = unique_MH[i]
         # Deal with MH outside range of tracklib
-        if (mh < minimum(MH(tracklib)))
-            tracklib_mh = minimum(MH(tracklib))
-        elseif (mh > maximum(MH(tracklib)))
-            tracklib_mh = maximum(MH(tracklib))
-        else
-            tracklib_mh = mh
-        end
-        # # Deal with MH outside range of bclib
-        # if (mh < minimum(MH(bclib)))
-        #     bclib_mh = minimum(MH(bclib))
-        # elseif (mh > maximum(MH(bclib)))
-        #     bclib_mh = maximum(MH(bclib))
-        # else
-        #     bclib_mh = mh
-        # end
-        # bct = bclib(bclib_mh) 
-        # Interpolate bclib at correct MH, Av
-        bct = bclib(unique_bc_MH[i], Av)
+        tracklib_mh = clamp(mh, extrema(MH(tracklib))...)
+        # bclib_mh = clamp(unique_bc_MH[i], extrema(MH(bclib))...)
 
         Threads.@threads for j in eachindex(unique_logAge)
-        # for j in eachindex(unique_logAge)
             logage = unique_logAge[j]
             ind = j + ((i-1) * length(unique_logAge)) # index into templates and other buffers for (i,j)
-            iso = isochrone(tracklib, bct, logage, tracklib_mh)
-            iso_mags = [getproperty(iso, k) for k in iso_symb] # (xsymb, ysymbs...)]
+            iso = isochrone(tracklib, bclib, logage, tracklib_mh, Av)
+            iso_mags = [getproperty(iso, k) for k in iso_symb]
             m_ini = iso.m_ini
             templates[ind] = SFH.partial_cmd_smooth(m_ini, iso_mags, err_funcs, yidx, xidxs, imf, 
                                                     complete_funcs, bias_funcs; 
