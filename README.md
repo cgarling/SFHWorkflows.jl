@@ -1,5 +1,5 @@
 # SFHWorkflows.jl
-[StarFormationHistories.jl](https://github.com/cgarling/StarFormationHistories.jl) contains highly modular components for measuring resolved star formation histories from high-precision color magnitude diagrams. This package provides standardized workflows for making these measurements that can be configured and ran from simple YAML configuration files.
+[StarFormationHistories.jl](https://github.com/cgarling/StarFormationHistories.jl) contains highly modular components for measuring resolved star formation histories from high-precision color magnitude diagrams. This package provides standardized workflows for making these measurements that can be configured and ran from simple YAML configuration files. Users may also be interested in [BolometricCorrections.jl](https://github.com/cgarling/BolometricCorrections.jl) and [StellarTracks.jl](https://github.com/cgarling/StellarTracks.jl) which are used to interpolate isochrones on the fly for use in the SFH fitting procedure.
 
 ## Installation
 This package is registered to the Julia General Registry and can be installed via the package manager with
