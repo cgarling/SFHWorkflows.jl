@@ -7,8 +7,8 @@ import YAML
 using OrderedCollections: OrderedDict
 using InitialMassFunctions
 using StarFormationHistories: NoBinaries, RandomBinaryPairs, MH_from_Z, dMH_dZ, PowerLawMZR, LinearAMR, LogarithmicAMR, GaussianDispersion
-using StellarTracks: PARSECLibrary, MISTLibrary, BaSTIv1Library, BaSTIv2Library
-using BolometricCorrections: YBCGrid, MISTBCGrid
+using StellarTracks: PARSECLibrary, MISTv1Library, MISTv2Library, BaSTIv1Library, BaSTIv2Library
+using BolometricCorrections: YBCGrid, MISTv1BCGrid, MISTv2BCGrid
 
 strip_whitespace(s::AbstractString) = replace(s, r"\s+" => "")
 
@@ -66,16 +66,24 @@ function parse_tracks(dict)
         goodkeys = sort([key for key in keys(st) if occursin("track", key)])
         return [parse_tracks(st[key]) for key in goodkeys]
     end
-    valid_models = ("parsec", "mist", "bastiv1", "bastiv2")
+    valid_models = ("parsec", "mistv1", "mistv2", "bastiv1", "bastiv2")
     name = lowercase(dict["name"])
+    if name == "mist"
+        @warn "Stellar track name \"mist\" is deprecated; please use \"mistv1\" for MIST v1.2 or \"mistv2\" for MIST v2.5. Assuming \"mistv1\"."
+        name = "mistv1"
+    end
     if !(name ∈ valid_models)
         error("Stellar track model $name invalid; valid stellar track models are $(join(valid_models, ", ")).")
     end
     if name == "parsec"
         return PARSECLibrary()
-    elseif name == "mist"
+    elseif name == "mistv1"
         vvcrit = get(dict, "vvcrit", 0.0)
-        return MISTLibrary(vvcrit)
+        return MISTv1Library(vvcrit)
+    elseif name == "mistv2"
+        vvcrit = get(dict, "vvcrit", 0.0)
+        afe = get(dict, "alpha_fe", 0.0)::Float64
+        return MISTv2Library(vvcrit, afe)
     elseif name == "bastiv1"
         α_fe = get(dict, "alpha_fe", 0.0)::Float64
         canonical = get(dict, "canonical", false)::Bool
@@ -98,10 +106,14 @@ function parse_bcs(dict)
         bc = dict["bolometriccorrections"]
         return [parse_bcs(bc[key]) for key in keys(bc)]
     end
-    valid_models = ("ybc", "mist")
+    valid_models = ("ybc", "mistv1", "mistv2")
     name = lowercase(dict["name"])
+    if name == "mist"
+        @warn "Bolometric correction name \"mist\" is deprecated; please use \"mistv1\" for MIST v1.2 or \"mistv2\" for MIST v2.5. Assuming \"mistv1\"."
+        name = "mistv1"
+    end
     if !(name ∈ valid_models)
-        error("Bolometric correction grid $name invalid; valid BC grids are are $(join(valid_models, ", ")).")
+        error("Bolometric correction grid $name invalid; valid BC grids are $(join(valid_models, ", ")).")
     end
     filterset = dict["filterset"]
     return if name == "ybc"
@@ -111,11 +123,18 @@ function parse_bcs(dict)
             println("Failed to initialize YBC bolometric correction grid with filterset $filterset; error shown below")
             rethrow(e)
         end
-    elseif name == "mist"
+    elseif name == "mistv1"
         try
-            MISTBCGrid(filterset)
+            MISTv1BCGrid(filterset)
         catch e
-            println("Failed to initialize MIST bolometric correction grid with filterset $filterset; error shown below")
+            println("Failed to initialize MIST v1.2 bolometric correction grid with filterset $filterset; error shown below")
+            rethrow(e)
+        end
+    elseif name == "mistv2"
+        try
+            MISTv2BCGrid(filterset)
+        catch e
+            println("Failed to initialize MIST v2.5 bolometric correction grid with filterset $filterset; error shown below")
             rethrow(e)
         end
     end
