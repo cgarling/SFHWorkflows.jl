@@ -1,7 +1,7 @@
 # This example runs the SFH fitting workflow `fit_sfh` and shows available plotting utilities.
 using SFHWorkflows
 
-config = "/home/cgarling/Development/julia/SFHWorkflows.jl/examples/config.yml"
+config = "./config.yml"
 # Perform the SFH fit
 result, h = fit_sfh(config); # `result` contains results, h is a StatsBase.Histogram containing the observed Hess diagram
 
@@ -35,7 +35,7 @@ dict = YAML.load_file(config; dicttype=dicttype) # Load config into dictionary s
 xcolor = split(dict["data"]["binning"]["xcolor"], ",")
 xcolor = join(strip_whitespace.(xcolor), " - ") # creates a string like "F475W - F814W" 
 yfilter = dict["data"]["binning"]["yfilter"]    # creates a string like "F814W"
-plot_path = joinpath("results", "results_hess.pdf") # file path to save figure to
+plot_path = joinpath(dict["output"]["path"], "results_hess.pdf") # file path to save figure to
 # `result.results` contains the SFH fit for every combination of stellar track and bolometric correction listed in `config`.
 # The results are stored in a 2-D Matrix indexed by stellar track first, bolometric correction grid second, so
 # result.results[1,2] gives you the result for the first listed stellar track and the second listed bolometric correction grid.
@@ -54,7 +54,7 @@ save(plot_path, fig)
 
 
 # Now we'll make the cumulative SFH and AMR plot. 
-plot_path2 = joinpath("results", "results_cumsfh.pdf")
+plot_path2 = joinpath(dict["output"]["path"], "results_cumsfh.pdf")
 fig, axs = SFHWorkflows.SFHFitting.plot_cumsfh_sys(result, plot_path2; idx=[1,1]);
 # This function also returns the plot figure and axes so you can further modify them.
 # We'll add a galaxy name label to the first axis.
