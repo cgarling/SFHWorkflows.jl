@@ -51,14 +51,33 @@ function read_histogram(filename::String)
 end
 
 # Top-level functions
-function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters, xstrings, ystring, edges,
+# `astfile` may be `nothing` when every filter used in the fit has a model in `filter_models`
+function fit_sfh(obsfile::AbstractString, astfile::Union{AbstractString, Nothing}, filters, xstrings, ystring, edges,
                  MH_model0::SFH.AbstractMetallicityModel, disp_model0::SFH.AbstractDispersionModel, Mstar::Number, stellar_tracks, bcs,
-                 dmod::Number, Av::Number, imf, MH, logAge, binary_model::SFH.AbstractBinaryModel, output_filename::AbstractString; 
-                 badval::Number=99.999, minerr::Number=0.0, maxerr::Number=0.2, plot_diagnostics::Bool=true, output_path::AbstractString=".") # filters=("mag1", "mag2")
+                 dmod::Number, Av::Number, imf, MH, logAge, binary_model::SFH.AbstractBinaryModel, output_filename::AbstractString;
+                 badval::Number=99.999, minerr::Number=0.0, maxerr::Number=0.2, plot_diagnostics::Bool=true, output_path::AbstractString=".",
+                 ast_filters=first(string.(filters), 2), filter_models=Dict{String, NamedTuple}()) # filters=("mag1", "mag2")
     @argcheck length(xstrings) == 2
     @argcheck Mstar > 0
     filters = string.(filters)
-    completeness, bias, err = process_ast_file(astfile, filters, badval, minerr, maxerr, plot_diagnostics, output_path)
+    ast_filters = isnothing(astfile) ? String[] : string.(ast_filters)
+    # Isochrone magnitudes are ordered this way in Systematics.templates; models must match
+    mag_order = ystring in xstrings ? xstrings : [ystring; xstrings]
+    Parsing.check_filter_models(mag_order, ast_filters, keys(filter_models))
+    models = Dict(name => snr_model(s.mag, s.snr; s.bias, s.minerr, s.snr50, s.width) for (name, s) in filter_models)
+    if isnothing(astfile)
+        completeness, bias, err = ([getproperty(models[f], k) for f in mag_order] for k in (:completeness, :bias, :err))
+    else
+        @argcheck length(ast_filters) == 2
+        asts = process_ast_file(astfile, ast_filters, badval, minerr, maxerr, plot_diagnostics, output_path)
+        # Joint models of the magnitudes in `mag_order`: the AST models of the two AST filters, combined with the
+        # per-filter models of any other filter
+        ia, ib = (findfirst(==(f), mag_order) for f in ast_filters)
+        other = [(k, models[mag_order[k]]) for k in eachindex(mag_order) if k ∉ (ia, ib)]
+        completeness = (m...) -> asts.completeness(m[ia], m[ib]) * prod(o.completeness(m[k]) for (k, o) in other; init=1.0)
+        joint(f, g) = (m...) -> (a = f(m[ia], m[ib]); ntuple(k -> k == ia ? a[1] : k == ib ? a[2] : getproperty(models[mag_order[k]], g)(m[k]), length(m)))
+        bias, err = joint(asts.bias, :bias), joint(asts.err, :err)
+    end
     data = readdlm(obsfile, Float64)
     yidx = findfirst(==(ystring), filters)
     xidxs = [findfirst(==(x), filters) for x in xstrings]
@@ -80,7 +99,7 @@ function fit_sfh(obsfile::AbstractString, astfile::AbstractString, filters, xstr
     return result, h
 end
 
-fit_sfh(@nospecialize(config::NamedTuple)) = fit_sfh(config.phot_file, config.ast_file, config.filters, config.xstrings, config.ystring, (config.xbins, config.ybins), config.MH_model0, config.disp_model0, config.Mstar, config.stellar_tracks, config.bcs, config.dmod, config.Av, config.imf, config.MH, config.logAge, config.binary_model, config.output_filename; badval=config.badval, minerr=config.minerr, maxerr=config.maxerr, plot_diagnostics=config.plot_diagnostics, output_path=config.output_path)
+fit_sfh(@nospecialize(config::NamedTuple)) = fit_sfh(config.phot_file, config.ast_file, config.filters, config.xstrings, config.ystring, (config.xbins, config.ybins), config.MH_model0, config.disp_model0, config.Mstar, config.stellar_tracks, config.bcs, config.dmod, config.Av, config.imf, config.MH, config.logAge, config.binary_model, config.output_filename; badval=config.badval, minerr=config.minerr, maxerr=config.maxerr, plot_diagnostics=config.plot_diagnostics, output_path=config.output_path, config.ast_filters, config.filter_models)
 fit_sfh(config_file::AbstractString) = fit_sfh(parse_config(config_file))
 
 

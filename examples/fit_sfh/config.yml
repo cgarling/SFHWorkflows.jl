@@ -3,13 +3,29 @@ data:
   photometry:
       photometry_file: phot.dat # One column per filter, apparent magnitudes
       filters: F475W, F814W # Filter name for each column in photometry_file, comma separated
-  ASTs:
+  # Every filter in binning (yfilter and xcolor) needs an observational model, given either by
+  # ASTs or by a per-filter model under `filters` below. A filter in both is an error.
+  ASTs: # Optional if `filters` covers every binning filter
     # For two filters, ast_file has 4 columns with convention
     # (inputmag1, inputmag2, (outmag1 - inputmag1), (outmag2 - inputmag2)
     ast_file: fake.dat
+    filters: F475W, F814W # Optional; filter for each AST column, both must be used in binning. Default is the first two photometry filters
     badval: 99.999 # values of (out-in) columns that indicates a non-detection
     minerr: 0.01   # minimum photometric error to allow in model
     maxerr: 0.25   # maximum photometric error to allow in model
+  # filters:
+  #   # Per-filter models from a tabulated SNR(mag) or mag_err(mag) curve in apparent magnitudes.
+  #   # log10(SNR) is interpolated linearly in magnitude and extrapolated linearly beyond the table.
+  #   # SNR must not increase toward fainter magnitudes and must fall between the two faintest points.
+  #   # Error is max(minerr, 1.0857 / SNR); bias is interpolated linearly from `bias` (default 0).
+  #   F606W:
+  #     mag: [20.0, 25.0, 26.0, 27.0, 27.5, 28.0, 28.5, 29.0]
+  #     snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97] # Give exactly one of snr or mag_err
+  #     bias: [0.0, 0.0, 0.0, -0.005, -0.01, -0.02, -0.03, -0.04] # Optional; <out> - <in> at each mag, default 0
+  #     minerr: 0.01 # Optional error floor; default 0
+  #     completeness: # Optional; 0.5 * (1 + erf((SNR - snr50) / (sqrt(2) * width)))
+  #       snr50: 5.0
+  #       width: 1.0
   binning:
     # range(a, b; length=c) gives uniform range from a to b with number of steps = c
     ybins: range(20.5, 28.0; length=150)
@@ -24,7 +40,8 @@ imf:
     mmax: 100.0 # Maximum stellar mass
 
 binaries:
-  # Valid models: NoBinaries, RandomBinaryPairs
+  # Valid models: NoBinaries, RandomBinaryPairs, BinaryMassRatio (binary_fraction required for the latter two;
+  # BinaryMassRatio draws the secondary-to-primary mass ratio from Uniform(0.1, 1))
   # model: RandomBinaryPairs
   # binary_fraction: 0.4
   model: NoBinaries

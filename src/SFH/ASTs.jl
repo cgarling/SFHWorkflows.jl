@@ -1,14 +1,16 @@
 """Module containing code to process artificial star test results into input appropriate for use in Systematics module."""
 module ASTs
 
-export process_ast_file
+export process_ast_file, snr_model
 
 import StarFormationHistories as SFH
 # import CSV
 using ArgCheck: @argcheck, @check
 using DelimitedFiles: readdlm
 using PDFmerger: merge_pdfs
-using DataInterpolations: CubicSpline, ExtrapolationType.Constant
+using DataInterpolations: CubicSpline, LinearInterpolation, ExtrapolationType, ExtrapolationType.Constant
+using Interpolations: interpolate, extrapolate, Gridded, Linear, Flat
+using SpecialFunctions: erf
 using Logging: ConsoleLogger, with_logger, Error
 using StatsBase: fit, Histogram
 using CairoMakie
@@ -75,7 +77,22 @@ function plot_ast_residual(input, output, itps, mag_label, err_range, badval::Nu
         return f
 end
 
-# Processes AST file and returns completeness, error, bias results
+# Replaces NaN entries with the nearest non-NaN value along the first dimension, then along the second.
+# `StarFormationHistories.process_ASTs` returns NaN for rows or columns of the grid without (detected) artificial stars.
+function fill_nan(A::AbstractMatrix)
+    A = copy(A)
+    for v in Iterators.flatten((eachcol(A), eachrow(A)))
+        good = findall(!isnan, v)
+        isempty(good) && continue
+        for i in eachindex(v)
+            isnan(v[i]) && (v[i] = v[good[argmin(abs.(good .- i))]])
+        end
+    end
+    return A
+end
+
+# Processes AST file and returns joint completeness, bias, and error models; each is a function of the input
+# magnitudes `(m1, m2)` in the two AST filters, and bias and error return one value per filter
 function process_ast_file(astfile::AbstractString, filters, badval::Number, minerr::Number, maxerr::Number, plot_diagnostics::Bool, output_path::AbstractString)
     astmags = readdlm(astfile, Float64)
     # @check iseven(size(astmags, 2))
@@ -90,17 +107,23 @@ function process_ast_file(astfile::AbstractString, filters, badval::Number, mine
     output1 = view(astmags, :, 3) .+ input1
     output2 = view(astmags, :, 4) .+ input2
     # Add badval's back into output
-    bad1 = isapprox.(badval, view(astmags, :, 3))
-    bad2 = isapprox.(badval, view(astmags, :, 4))
-    # Require detection in both bands
-    bad = bad1 .| bad2
-    output1[bad] .= badval
-    output2[bad] .= badval
+    output1[isapprox.(badval, view(astmags, :, 3))] .= badval
+    output2[isapprox.(badval, view(astmags, :, 4))] .= badval
 
-    r1 = process_asts(input1, output1, badval, minerr, maxerr)
-    r2 = process_asts(input2, output2, badval, minerr, maxerr)
+    # The catalog requires detection in both filters, which is not separable into per-filter completeness, so the models
+    # are measured on a 2-D grid of input magnitudes; sparse cells fall back to 1-D values inside process_ASTs
+    bins = Tuple(range(round(minimum(x), RoundUp; digits=1), round(maximum(x), RoundDown; digits=1); step=0.3) for x in (input1, input2))
+    table = Table(in1=input1, in2=input2, out1=output1, out2=output2)
+    centers, C, B, E = SFH.process_ASTs(table, (:in1, :in2), (:out1, :out2), bins, r -> !isapprox(r.out1, badval) && !isapprox(r.out2, badval))
+    itp(A) = extrapolate(interpolate(centers, fill_nan(A), Gridded(Linear())), Flat())
+    completeness = itp(C)
+    b = itp.(B)
+    e = itp.(map(x -> clamp.(x, minerr, maxerr), E))
 
     if plot_diagnostics
+        # Per-filter (1-D) models, used only to summarize the ASTs in the diagnostic plots
+        r1 = process_asts(input1, output1, badval, minerr, maxerr)
+        r2 = process_asts(input2, output2, badval, minerr, maxerr)
         # errmax1 = abs(maximum(input1 .- output1))
         # errlim1 = (max(-1.5*maxerr, -errmax1), 
         #            min(1.5*maxerr, errmax1))
@@ -156,13 +179,42 @@ function process_ast_file(astfile::AbstractString, filters, badval::Number, mine
         # display(f)
         save(joinpath(output_path, "error.pdf"), f)
 
+        # Plot joint completeness used in the fit
+        f = Figure()
+        ax = Axis(f[1, 1], xlabel=filters[1], ylabel=filters[2], title="Joint completeness")
+        hm = heatmap!(ax, centers..., C; colorrange=(0, 1))
+        Colorbar(f[1, 2], hm)
+        save(joinpath(output_path, "completeness2d.pdf"), f)
+
         # When finished, merge pdfs into one
-        merge_pdfs(map(Base.Fix1(joinpath, output_path), ["residuals1.pdf", "residuals2.pdf", "error.pdf", "completeness.pdf"]), joinpath(output_path, "diagnostics.pdf"); cleanup=true)
+        merge_pdfs(map(Base.Fix1(joinpath, output_path), ["residuals1.pdf", "residuals2.pdf", "error.pdf", "completeness.pdf", "completeness2d.pdf"]), joinpath(output_path, "diagnostics.pdf"); cleanup=true)
     end
-    completeness = [r1[1], r2[1]]
-    bias = [r1[2], r2[2]]
-    err = [r1[3], r2[3]]
-    return (completeness = completeness, bias = bias, err = err)
+    return (completeness = completeness, bias = (m1, m2) -> (b[1](m1, m2), b[2](m1, m2)), err = (m1, m2) -> (e[1](m1, m2), e[2](m1, m2)))
+end
+
+"""
+    (completeness, bias, err) = snr_model(mag, snr; bias=nothing, minerr=0, snr50=5, width=1)
+Returns completeness, bias, and photometric error functions of apparent magnitude for a filter whose signal-to-noise
+ratio `snr` is tabulated at apparent magnitudes `mag`. `log10(snr)` is interpolated linearly in magnitude and
+extrapolated linearly beyond the table, so the SNR keeps falling past the faint end rather than flattening.
+The error is `max(minerr, StarFormationHistories.magerr_snr(SNR))`. The bias is zero unless `bias` gives its value at
+each of `mag`, in which case it is interpolated linearly and held constant beyond the table. The completeness is
+`0.5 * (1 + erf((SNR - snr50) / (sqrt(2) * width)))`.
+"""
+function snr_model(mag, snr; bias=nothing, minerr::Number=0, snr50::Number=5, width::Number=1)
+    @argcheck length(mag) == length(snr) >= 2
+    @argcheck isnothing(bias) || length(bias) == length(mag) "`bias` must have one value per entry of `mag`."
+    @argcheck all(>(0), snr) "All tabulated SNR values must be positive."
+    @argcheck width > 0
+    p = sortperm(mag)
+    # Linear extrapolation past the faint end must keep SNR falling, or completeness would rise again
+    @argcheck issorted(snr[p]; rev=true) "Tabulated SNR must not increase toward fainter magnitudes."
+    @argcheck snr[p[end]] < snr[p[end-1]] "Tabulated SNR must decrease between the two faintest magnitudes."
+    logsnr = LinearInterpolation(log10.(snr[p]), mag[p]; extrapolation=ExtrapolationType.Linear)
+    completeness(m) = (1 + erf((exp10(logsnr(m)) - snr50) / (sqrt(2) * width))) / 2
+    err(m) = max(minerr, SFH.magerr_snr(exp10(logsnr(m))))
+    biasfunc = isnothing(bias) ? zero : LinearInterpolation(bias[p], mag[p]; extrapolation=Constant)
+    return (completeness = completeness, bias = biasfunc, err = err)
 end
 
 end # module
