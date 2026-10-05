@@ -1,0 +1,164 @@
+# Configuration for `simulate_catalog`, which samples a simulated photometric catalog from a model
+# stellar population. Sections shared with the `fit_sfh` configuration (imf, binaries,
+# bolometriccorrections, metallicity, output) use the same keys where possible.
+
+stellartrack:
+  # Exactly one stellar track library. Same names and options as `stellartracks.trackN` in the
+  # fit_sfh configuration: parsec, mistv1, mistv2, bastiv1, bastiv2 (case insensitive).
+  name: PARSEC
+  # Grid of simple stellar populations used to discretize the SFH; same syntax as fit_sfh.
+  logAge: range(9.0, 10.13; step=0.01) # log10(age [yr])
+  MH: range(-2.1, -0.5; step=0.1)      # [M/H] in the chemistry of the stellar track library; must lie within its range
+
+bolometriccorrections:
+  # One or more BC grids. Output magnitudes are the union of the filters of all listed grids,
+  # all computed for the same sampled stars. See https://cgarling.github.io/BolometricCorrections.jl/stable/
+  # Output columns use each grid's own filter names (e.g., YBC "F814W" vs. MISTv1 "ACS_WFC_F814W");
+  # duplicate column names across grids are an error, use `filters` to resolve them.
+  bc1:
+    name: YBC
+    filterset: acs_wfc
+    filters: F475W, F606W, F814W # Optional subset of the filterset; default is all filters
+  bc2:
+    name: YBC
+    filterset: Roman2024
+
+imf:
+  # Valid models: Kroupa2001, Chabrier2001BPL, Chabrier2001LogNormal, Chabrier2003, Chabrier2003System, Salpeter1955
+  model: Kroupa2001
+  mmin: 0.08
+  mmax: 100.0
+
+binaries:
+  # Valid models: NoBinaries, RandomBinaryPairs, BinaryMassRatio (binary_fraction required for the latter two;
+  # BinaryMassRatio draws the secondary-to-primary mass ratio from Uniform(0.1, 1))
+  model: NoBinaries
+  # model: RandomBinaryPairs
+  # binary_fraction: 0.4
+
+properties:
+  stellar_mass: 2.0e5     # Total birth stellar mass to sample [solar masses]
+  # Alternative to stellar_mass: integrated absolute magnitude in one output filter. Give exactly one
+  # of stellar_mass or absolute_magnitude.
+  # absolute_magnitude: -9.0
+  # absolute_magnitude_filter: F606W
+  distance_modulus: 24.95 # Give exactly one of distance_modulus or distance
+  # distance: 977e3       # Distance [pc]
+  Av: 0.13466152995504851 # V-band extinction
+
+sfh:
+  T_max: 13.7 # Lookback time [Gyr] at which star formation begins; cum_sfh=0 here by definition
+  # model: constant  # Constant SFR from T_max to the youngest logAge in the grid
+  model: cumulative
+  # Cumulative fraction of stellar mass formed by each lookback time; linearly interpolated onto
+  # the logAge grid. Must increase toward the present and end at 1.
+  logAge: [10.130, 10.114, 10.079, 10.041] # 13.5, 13.0, 12.0, 11.0 Gyr
+  cum_sfh: [0.2, 0.4, 0.8, 1.0]
+
+metallicity:
+  # Same models as fit_sfh (LinearAMR, LogarithmicAMR, PowerLawMZR), but parameters are the true
+  # values rather than {x0, free}. AMRs use sfh.T_max.
+  name: LogarithmicAMR # Z = alpha * (T_max - t) + beta, Z is metal mass fraction
+  # Either give alpha and beta directly, or (AMRs only) two ([M/H], lookback time [Gyr]) constraints
+  constraints: [[-2.5, 13.7], [-1.0, 0.0]]
+  # alpha: 1e-4
+  # beta: 5e-5
+  std: 0.1 # Gaussian σ for the spread in [M/H] at fixed time
+
+  # name: LinearAMR       # [M/H] = alpha * (T_max - t) + beta
+  # alpha: 0.1            # or constraints: [[-2.5, 13.7], [-1.0, 0.0]]
+  # beta: -2.5
+  # std: 0.1
+
+  # name: PowerLawMZR     # [M/H] = alpha * (log10(M_*(t)) - log10(mstar0)) + beta
+  # alpha: 0.3
+  # beta: -1.5
+  # mstar0: 1e6
+  # std: 0.1
+
+sampling:
+  seed: 42             # Optional RNG seed for reproducible catalogs; omit for a random seed
+  mag_lim: 30.0        # Optional apparent magnitude limit; fainter systems are not stored. Default Inf
+  mag_lim_filter: F814W
+  min_ssp_mass: 0.01   # SSPs with less than this birth mass [solar masses] are not sampled, since
+                       # sampling always draws at least one star per SSP. Default 0.01
+
+mockobservations:
+  # Optional. Without this section the output is a pure (noiseless, complete) catalog. Each filter
+  # listed here gets an extra output column <filter>_obs holding the mock-observed magnitude (pure
+  # magnitude + bias + Gaussian error), or NaN if the star was not detected. Detection in the two AST
+  # filters is drawn jointly from the 2-D AST completeness C(mag1, mag2); each per-filter model under
+  # `filters` is drawn independently. This matches the completeness assumed by the fit_sfh templates.
+  # A filter that appears in both ASTs and filters is an error.
+  ASTs:
+    # Same format and options as data.ASTs in fit_sfh: columns
+    # (inputmag1, inputmag2, outmag1 - inputmag1, outmag2 - inputmag2)
+    ast_file: /home/cgarling/Work/UVA/Projects/SFH/aquarius/data/fake.dat
+    filters: F475W, F814W # Output filter for each AST column; must match exactly one output column
+    badval: 99.999
+    minerr: 0.01
+    # maxerr: 0.25
+  filters:
+    # Per-filter models from a tabulated SNR(mag) or mag_err(mag) curve, given in apparent magnitudes.
+    # log10(SNR) is interpolated linearly in magnitude and extrapolated linearly beyond the table, so
+    # SNR keeps falling (and completeness goes to 0) past the faint end; SNR must not increase toward
+    # fainter magnitudes and must fall between the two faintest points. Magnitude error `mag_err` and
+    # signal-to-noise ratio `snr` are converted between assuming mag_err = max(minerr, 1.0857 / SNR).
+    # Only one of `snr` or `mag_err` can be provided for each filter.
+    # Bias is interpolated linearly from `bias` (default 0).
+    F606W:
+      mag: [20.0, 25.0, 26.0, 27.0, 27.5, 28.0, 28.5, 29.0]
+      snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97] # Give exactly one of snr or mag_err
+      # mag_err: [0.0026, 0.0168, 0.0317, 0.0664, 0.0995, 0.1516, 0.2345, 0.3656] # ≈ 1.0857/SNR
+      bias: [0.0, 0.0, 0.0, -0.005, -0.01, -0.02, -0.03, -0.04] # Optional; <out> - <in> at each mag, default 0
+      minerr: 0.01 # Optional error floor; default 0
+      completeness: # Optional; default snr50: 5.0, width: 1.0
+        # Completeness(mag) = 0.5 * (1 + erf((SNR(mag) - snr50) / (sqrt(2) * width)))
+        snr50: 5.0
+        width: 1.0
+
+fit:
+  # Optional. When run is true, the simulated catalog is fit with fit_sfh. A fit_sfh configuration is
+  # generated from the sections above and written to <output.path>/fit/input.yml before fitting, so
+  # the fit can be rerun or edited. Defaults: same stellar track, every BC grid that contains the fit filters,
+  # same IMF/binaries/logAge/MH grid/distance/Av, and the true metallicity model as the starting
+  # point (x0 = true values, all free). As in fit_sfh, the initial SFH guess is a constant SFR.
+  run: true # Default false
+  stellar_mass_error: 0.05 # Initial Mstar drawn from Normal(stellar_mass, stellar_mass_error * stellar_mass)
+                           # using sampling.seed; default 0 (start at the true stellar_mass)
+  binning: # Required when run is true; same keys as data.binning in fit_sfh
+    yfilter: F814W       # Must be mock-observed filters
+    xcolor: F475W, F814W
+    ybins: range(20.5, 28.0; length=150)
+    xbins: range(-0.75, 2.5; length=75)
+  # Any of the following fit_sfh sections replaces the generated default, e.g., to start from a
+  # different metallicity model or to fit with different tracks or BCs than were used to simulate.
+  metallicity:
+    name: LogarithmicAMR
+    constraints: [[-2.3, 13.7], [-0.8, 0.0]]
+    std: 0.1
+  # stellartracks:
+  #   track1:
+  #     name: MISTv1
+  #     vvcrit: 0.0
+  #   logAge: range(9.0, 10.13; step=0.05)
+  #   MH: range(-2.4, -0.5; step=0.1)
+  # bolometriccorrections:
+  #   bc1:
+  #     name: MISTv1
+  #     filterset: acs_wfc
+  plotting:
+    diagnostics: true
+
+output:
+  path: ./results
+  filename: catalog.txt
+  # Files written, with <base> and <ext> from filename:
+  #   <filename>        Every sampled system still on its isochrone (brighter than mag_lim, if given):
+  #                     m_ini, m_ini2 (secondary initial mass, 0 for single stars), logAge, MH, pure
+  #                     apparent magnitudes in all output filters, and <filter>_obs columns for
+  #                     mock-observed filters. Stars that have died are not included, so the m_ini
+  #                     and m_ini2 sums are less than the birth stellar mass.
+  #   <base>_truth<ext> Input SFH binned on the logAge grid, with columns matching fit_sfh results
+  #   input.yml         Copy of this configuration
+  #   fit/              fit_sfh config, photometry (stars detected in the fit filters), and outputs

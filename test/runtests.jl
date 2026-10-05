@@ -1,6 +1,7 @@
 using SFHWorkflows
 using SFHWorkflows.SFHFitting.ASTs: snr_model, fill_nan
-using SFHWorkflows.SFHFitting.Parsing: parse_filter_models, check_filter_models, parse_binaries, parse_imf
+using SFHWorkflows.SFHFitting.Parsing: parse_filter_models, check_filter_models, parse_binaries, parse_imf, parse_metallicity
+using SFHWorkflows.Simulate: sfh_mass_fractions
 import StarFormationHistories as SFH
 using Test
 
@@ -63,4 +64,35 @@ end
     imf = parse_imf(Dict("imf" => Dict("model" => "Kroupa2001", "mmin" => 0.1, "mmax" => 50.0)))
     @test extrema(imf) == (0.1, 50.0)
     @test_throws "IMF model Kroupa invalid" parse_imf(Dict("imf" => Dict("model" => "Kroupa")))
+end
+
+@testset "parse_metallicity" begin
+    d = Dict("name" => "LinearAMR", "alpha" => Dict("x0" => 0.1, "free" => false), "beta" => -2.5, "std" => 0.1, "T_max" => 13.7)
+    m, disp = parse_metallicity(Dict("metallicity" => d))
+    @test m == SFH.LinearAMR(0.1, -2.5, 13.7, (false, true))
+    @test disp == SFH.GaussianDispersion(0.1, (false,))
+    # Constraints, with T_max from the keyword when the section has none
+    c = Dict("name" => "LogarithmicAMR", "constraints" => [[-2.5, 13.7], [-1.0, 0.0]], "std" => 0.1)
+    @test first(parse_metallicity(c; T_max=13.7)) == SFH.LogarithmicAMR((-2.5, 13.7), (-1.0, 0.0), 13.7)
+    @test first(parse_metallicity(merge(c, Dict("name" => "LinearAMR")); T_max=13.7)) == SFH.LinearAMR((-2.5, 13.7), (-1.0, 0.0), 13.7)
+    @test first(parse_metallicity(Dict("name" => "PowerLawMZR", "alpha" => 0.3, "beta" => -1.5, "mstar0" => 1e6, "std" => 0.1))) == SFH.PowerLawMZR(0.3, -1.5, 6.0)
+    @test_throws "requires `T_max`" parse_metallicity(c)
+    @test_throws "supported only for LinearAMR and LogarithmicAMR" parse_metallicity(merge(c, Dict("alpha" => 0.1)); T_max=13.7)
+    @test_throws "must be two" parse_metallicity(merge(c, Dict("constraints" => [[-2.5, 13.7]])); T_max=13.7)
+end
+
+@testset "sfh_mass_fractions" begin
+    logAge = [9.0, 9.5, 10.0]
+    t = [1.0, exp10(0.5), 10.0, 13.0] # Bin edges in lookback time [Gyr]
+    # Constant SFR: mass in each bin is proportional to its duration
+    f = sfh_mass_fractions(Dict("T_max" => 13.0, "model" => "constant"), logAge)
+    @test f ≈ diff(t) ./ 12
+    # Cumulative SFH: 40% formed between 13 and 10 Gyr, the rest between 10 Gyr and exp10(0.5) Gyr
+    sfh = Dict("T_max" => 13.0, "model" => "cumulative", "logAge" => [9.5, 10.0], "cum_sfh" => [1.0, 0.4])
+    @test sfh_mass_fractions(sfh, logAge) ≈ [0, 0.6, 0.4]
+    # Linear in lookback time (constant SFR) between 13 Gyr and 1 Gyr, so half of the mass forms before 7 Gyr
+    @test sfh_mass_fractions(merge(sfh, Dict("logAge" => [9.0], "cum_sfh" => [1.0])), [9.0, log10(7e9)]) ≈ [0.5, 0.5]
+    @test_throws "must increase toward the present" sfh_mass_fractions(merge(sfh, Dict("cum_sfh" => [0.4, 1.0])), logAge)
+    @test_throws "younger than the youngest" sfh_mass_fractions(merge(sfh, Dict("logAge" => [8.5, 10.0])), logAge)
+    @test_throws "must be older than the oldest" sfh_mass_fractions(Dict("T_max" => 5.0, "model" => "constant"), logAge)
 end

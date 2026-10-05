@@ -1,7 +1,7 @@
 """Module containing functions to plot the results of SFH fits."""
 module Plotting
 
-export plot_cmd_residuals, plot_cumsfh_sys
+export plot_cmd_residuals, plot_cumsfh_sys, plot_completeness_hess
 
 import StarFormationHistories as SFH
 using ArgCheck: @argcheck, @check
@@ -163,6 +163,24 @@ function plot_cumsfh_sys(results, output_file::AbstractString; idx=[1,1])
     shaded_band!(ax2, x[begin:end-1], getproperty(table, Symbol("MH_lower_sys")), getproperty(table, Symbol("MH_upper_sys")), color=:black)
     save(output_file, fig)
     return fig, (ax1, ax2)
+end
+
+# Plots the completeness used in the fit at the center of each Hess diagram bin. Requires `yfilter` to be one of the two
+# `xcolor` filters so that each bin determines both magnitudes; `completeness` takes the magnitudes in `xcolor` order,
+# either as a joint function of both or as a vector of per-filter functions.
+function plot_completeness_hess(completeness, edges, xcolor, yfilter::AbstractString, output_file::AbstractString)
+    @argcheck yfilter in xcolor
+    centers = Tuple(e[begin:end-1] .+ diff(e) ./ 2 for e in edges)
+    iy = findfirst(==(yfilter), xcolor)
+    comp(m) = completeness isa AbstractVector ? prod(f(x) for (f, x) in zip(completeness, m)) : completeness(m...)
+    C = [comp(iy == 2 ? (y + c, y) : (y, y - c)) for c in centers[1], y in centers[2]]
+    fig = Figure()
+    ax = Axis(fig[1, 1], xlabel=parse_xcolor(xcolor), ylabel=yfilter, title="Completeness", yreversed=true)
+    hm = heatmap!(ax, edges..., C; colorrange=(0, 1))
+    contour!(ax, centers..., C; levels=[0.5], color=:white)
+    Colorbar(fig[1, 2], hm)
+    save(output_file, fig)
+    return fig
 end
 
 end # module

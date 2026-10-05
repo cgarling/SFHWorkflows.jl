@@ -100,6 +100,7 @@ properties:
   Av: 0.13466152995504851 # V-band extinction
   distance_modulus: 24.95
   Mstar: 2.6e6 # Stellar mass to set normalization of initial SFH guess; order-of-magnitude
+  T_max: 13.7 # Optional; lookback time [Gyr] when star formation begins (right edge of the oldest logAge bin, and T_max of the AMRs). Default 13.7
 
 metallicity: # Options are LinearAMR, LogarithmicAMR, PowerLawMZR, examples below
   name: PowerLawMZR # [M/H] = alpha * (log10(M_*(t)) - log10(mstar0)) + beta
@@ -120,7 +121,6 @@ metallicity: # Options are LinearAMR, LogarithmicAMR, PowerLawMZR, examples belo
 #   beta:
 #     x0: -1.5
 #     free: true
-#   T_max: 13.7 # Highest valid lookback time, typically the age of the Universe, in units of Gyr.
 #   std: 0.1
 
 # metallicity:
@@ -131,7 +131,6 @@ metallicity: # Options are LinearAMR, LogarithmicAMR, PowerLawMZR, examples belo
 #   beta:
 #     x0: 5e-5
 #     free: true
-#   T_max: 13.7 # Highest valid lookback time, typically the age of the Universe, in units of Gyr.
 #   std: 0.1
 
 plotting:

@@ -153,23 +153,49 @@ end
 #   mstar0: 1e6 # Stellar mass normalization; by definition, metallicity is beta at mstar0. Generally leave this be.
 #   std: 0.1 # Gaussian σ for the spread in metallicity at fixed time
 
-function parse_metallicity(dict)
-    # Recursion: If this is top-level dict, call again with sub-dictionaries as argument 
+# A model parameter is either `{x0, free}` (initial guess for fit_sfh) or a plain value, which is free to vary in fit_sfh
+parse_param(d::AbstractDict) = (Float64(d["x0"]), Bool(get(d, "free", true)))
+parse_param(d) = (Float64(d), true)
+
+"""
+    parse_metallicity(dict; T_max=nothing)
+Parses a metallicity model section into `(MH_model, disp_model)`. `alpha` and `beta` may each be `{x0, free}` or a plain
+value; the AMRs alternatively accept `constraints: [[MH1, t1], [MH2, t2]]` ([M/H] at two lookback times in Gyr), which
+are free in fit_sfh. AMRs use `dict["T_max"]` if present and the keyword `T_max` otherwise.
+"""
+function parse_metallicity(dict; T_max=nothing)
+    # Recursion: If this is top-level dict, call again with sub-dictionaries as argument
     if "metallicity" ∈ keys(dict)
-        d = dict["metallicity"]
-        return parse_metallicity(d)
+        return parse_metallicity(dict["metallicity"]; T_max)
     end
-    valid_models = ("PowerLawMZR", "LinearAMR", "LogarithmicAMR") # ("powerlawmzr", "linearamr", "logarithmicamr")
+    valid_models = ("PowerLawMZR", "LinearAMR", "LogarithmicAMR")
     name = lowercase(dict["name"])
     if !(name ∈ lowercase.(valid_models))
         error("Metallicity model $name invalid; valid metallicity models are $(join(valid_models, ", ")).")
     end
-    MH_model0 = if name == "powerlawmzr"
-        PowerLawMZR(dict["alpha"]["x0"], dict["beta"]["x0"], log10(dict["mstar0"]), (dict["alpha"]["free"], dict["beta"]["free"]))
-    elseif name == "linearamr"
-        LinearAMR(dict["alpha"]["x0"], dict["beta"]["x0"], dict["T_max"], (dict["alpha"]["free"], dict["beta"]["free"]))
-    elseif name == "logarithmicamr"
-        LogarithmicAMR(dict["alpha"]["x0"], dict["beta"]["x0"], dict["T_max"], MH_from_Z, dMH_dZ, (dict["alpha"]["free"], dict["beta"]["free"]))
+    T_max = get(dict, "T_max", T_max)
+    if name != "powerlawmzr" && isnothing(T_max)
+        error("Invalid configuration: metallicity model $(dict["name"]) requires `T_max`.")
+    end
+    MH_model0 = if haskey(dict, "constraints")
+        if name == "powerlawmzr" || haskey(dict, "alpha") || haskey(dict, "beta")
+            error("Invalid configuration: metallicity `constraints` are supported only for LinearAMR and LogarithmicAMR, and replace `alpha` and `beta`.")
+        end
+        c = dict["constraints"]
+        if length(c) != 2 || any(x -> length(x) != 2, c)
+            error("Invalid configuration: metallicity `constraints` must be two [[M/H], lookback time [Gyr]] pairs.")
+        end
+        c1, c2 = (Tuple(Float64.(x)) for x in c)
+        name == "linearamr" ? LinearAMR(c1, c2, T_max) : LogarithmicAMR(c1, c2, T_max)
+    else
+        (α, αfree), (β, βfree) = parse_param(dict["alpha"]), parse_param(dict["beta"])
+        if name == "powerlawmzr"
+            PowerLawMZR(α, β, log10(dict["mstar0"]), (αfree, βfree))
+        elseif name == "linearamr"
+            LinearAMR(α, β, T_max, (αfree, βfree))
+        else
+            LogarithmicAMR(α, β, T_max, MH_from_Z, dMH_dZ, (αfree, βfree))
+        end
     end
     disp_model0 = GaussianDispersion(dict["std"], (false,))
     return MH_model0, disp_model0
@@ -288,11 +314,16 @@ function parse_config(config::AbstractDict)
     stellar_tracks = parse_tracks(config)
     @info "Loading bolometric corrections"
     bcs = parse_bcs(config)
-    MH_model0, disp_model0 = parse_metallicity(config)
+    # Lookback time [Gyr] when star formation begins (right edge of the oldest logAge bin); the AMRs use the same T_max
+    T_max = Float64(get(config["properties"], "T_max", get(config["metallicity"], "T_max", 13.7)))
+    if haskey(config["metallicity"], "T_max") && config["metallicity"]["T_max"] != T_max
+        error("Invalid configuration: metallicity.T_max $(config["metallicity"]["T_max"]) differs from properties.T_max $T_max; give T_max once, in properties.")
+    end
+    MH_model0, disp_model0 = parse_metallicity(config; T_max)
     logAge = eval(Meta.parse(config["stellartracks"]["logAge"]))
     MH = eval(Meta.parse(config["stellartracks"]["MH"]))
 
-    return (phot_file=phot_file, ast_file=ast_file, ast_filters=ast_filters, filter_models=filter_models, filters=filters, badval=badval, maxerr=maxerr, minerr=minerr, xbins=xbins, ybins=ybins, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0, output_path=output_path, output_filename=config["output"]["filename"], ystring=ystring, xstrings=xstrings, logAge=logAge, MH=MH)
+    return (phot_file=phot_file, ast_file=ast_file, ast_filters=ast_filters, filter_models=filter_models, filters=filters, badval=badval, maxerr=maxerr, minerr=minerr, xbins=xbins, ybins=ybins, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0, output_path=output_path, output_filename=config["output"]["filename"], ystring=ystring, xstrings=xstrings, logAge=logAge, MH=MH, T_max=T_max)
 end
 
 end # module
