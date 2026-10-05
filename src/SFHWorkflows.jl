@@ -1,6 +1,6 @@
 module SFHWorkflows
 
-export fit_sfh
+export fit_sfh, simulate_catalog
 
 using StatsBase: Histogram
 using CairoMakie: Makie, set_theme!, theme_latexfonts # CairoMakie re-exports Makie
@@ -27,5 +27,7 @@ Makie.plottype(::Histogram) = Makie.Heatmap
 
 include(joinpath("SFH", "SFHFitting.jl"))
 using .SFHFitting
+include("Simulate.jl")
+using .Simulate
 
 end # module

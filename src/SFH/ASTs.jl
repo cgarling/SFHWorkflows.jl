@@ -7,7 +7,6 @@ import StarFormationHistories as SFH
 # import CSV
 using ArgCheck: @argcheck, @check
 using DelimitedFiles: readdlm
-using PDFmerger: merge_pdfs
 using DataInterpolations: CubicSpline, LinearInterpolation, ExtrapolationType, ExtrapolationType.Constant
 using Interpolations: interpolate, extrapolate, Gridded, Linear, Flat
 using SpecialFunctions: erf
@@ -174,20 +173,10 @@ function process_ast_file(astfile::AbstractString, filters, badval::Number, mine
         # Plot mag2
         scatter!(ax, r2[3].t, r2[3].u, color=:red, label=filters[2])
         lines!(ax, r2[3].t, r2[3].(r2[3].t), color=:red, linestyle=:dash, label=filters[2])
-        ylims!(0.0, maxerr*1.5)
+        ylims!(0.0, 1.5 * (isfinite(maxerr) ? maxerr : maximum(vcat(r1[3].u, r2[3].u))))
         axislegend(ax, merge=true, unique=true, position=:lt)
         # display(f)
         save(joinpath(output_path, "error.pdf"), f)
-
-        # Plot joint completeness used in the fit
-        f = Figure()
-        ax = Axis(f[1, 1], xlabel=filters[1], ylabel=filters[2], title="Joint completeness")
-        hm = heatmap!(ax, centers..., C; colorrange=(0, 1))
-        Colorbar(f[1, 2], hm)
-        save(joinpath(output_path, "completeness2d.pdf"), f)
-
-        # When finished, merge pdfs into one
-        merge_pdfs(map(Base.Fix1(joinpath, output_path), ["residuals1.pdf", "residuals2.pdf", "error.pdf", "completeness.pdf", "completeness2d.pdf"]), joinpath(output_path, "diagnostics.pdf"); cleanup=true)
     end
     return (completeness = completeness, bias = (m1, m2) -> (b[1](m1, m2), b[2](m1, m2)), err = (m1, m2) -> (e[1](m1, m2), e[2](m1, m2)))
 end
