@@ -7,8 +7,9 @@ stellartrack:
   # fit_sfh configuration: parsec, mistv1, mistv2, bastiv1, bastiv2 (case insensitive).
   name: PARSEC
   # Grid of simple stellar populations used to discretize the SFH; same syntax as fit_sfh.
-  logAge: range(9.0, 10.13; step=0.01) # log10(age [yr])
-  MH: range(-2.1, -0.5; step=0.1)      # [M/H] in the chemistry of the stellar track library; must lie within its range
+  logAge: range(8.0, 10.13; step=0.05) # log10(age [yr])
+  MH: range(-2.1, -0.5; step=0.1)      # [M/H] in the chemistry of the stellar track library; outside the track range,
+                                       # the nearest track [M/H] is used with BCs at the requested [M/H]
 
 bolometriccorrections:
   # One or more BC grids. Output magnitudes are the union of the filters of all listed grids,
@@ -37,7 +38,7 @@ binaries:
   # binary_fraction: 0.4
 
 properties:
-  stellar_mass: 2.0e5     # Total birth stellar mass to sample [solar masses]
+  stellar_mass: 2.0e6     # Total birth stellar mass to sample [solar masses]
   # Alternative to stellar_mass: integrated absolute magnitude in one output filter. Give exactly one
   # of stellar_mass or absolute_magnitude.
   # absolute_magnitude: -9.0
@@ -52,8 +53,9 @@ sfh:
   model: cumulative
   # Cumulative fraction of stellar mass formed by each lookback time; linearly interpolated onto
   # the logAge grid. Must increase toward the present and end at 1.
-  logAge: [10.130, 10.114, 10.079, 10.041] # 13.5, 13.0, 12.0, 11.0 Gyr
-  cum_sfh: [0.2, 0.4, 0.8, 1.0]
+  # Dwarf irregular with delayed star formation that continues to the present (similar to Aquarius or Leo A)
+  logAge: [10.114, 10.0, 9.903, 9.845, 9.778, 9.699, 9.602, 9.477, 9.301, 9.0, 8.699, 8.0] # 13, 10, 8, 7, 6, 5, 4, 3, 2, 1, 0.5, 0.1 Gyr
+  cum_sfh: [0.06, 0.08, 0.13, 0.25, 0.40, 0.55, 0.65, 0.73, 0.85, 0.93, 0.97, 1.0]
 
 metallicity:
   # Same models as fit_sfh (LinearAMR, LogarithmicAMR, PowerLawMZR), but parameters are the true
@@ -91,12 +93,14 @@ mockobservations:
   # `filters` is drawn independently. This matches the completeness assumed by the fit_sfh templates.
   # A filter that appears in both ASTs and filters is an error.
   ASTs:
+    # Empty here, so every filter uses its per-filter model below. To use joint AST models for two filters,
+    # uncomment ast_file and filters and remove those two filters from `filters`.
     # Same format and options as data.ASTs in fit_sfh: columns
     # (inputmag1, inputmag2, outmag1 - inputmag1, outmag2 - inputmag2)
-    ast_file: /home/cgarling/Work/UVA/Projects/SFH/aquarius/data/fake.dat
-    filters: F475W, F814W # Output filter for each AST column; must match exactly one output column
-    badval: 99.999
-    minerr: 0.01
+    # ast_file: fake.dat
+    # filters: F475W, F814W # Output filter for each AST column; must match exactly one output column
+    # badval: 99.999
+    # minerr: 0.01
     # maxerr: 0.25
   filters:
     # Per-filter models from a tabulated SNR(mag) or mag_err(mag) curve, given in apparent magnitudes.
@@ -106,6 +110,13 @@ mockobservations:
     # signal-to-noise ratio `snr` are converted between assuming mag_err = max(minerr, 1.0857 / SNR).
     # Only one of `snr` or `mag_err` can be provided for each filter.
     # Bias is interpolated linearly from `bias` (default 0).
+    # The three filters share one SNR curve, shifted in magnitude to 50% completeness (SNR = 5) near
+    # F475W = 28.9, F606W = 28.4, and F814W = 27.3.
+    F475W:
+      mag: [20.5, 25.5, 26.5, 27.5, 28.0, 28.5, 29.0, 29.5] # F606W mag + 0.5
+      snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97]
+      bias: [0.0, 0.0, 0.0, -0.005, -0.01, -0.02, -0.03, -0.04]
+      minerr: 0.01
     F606W:
       mag: [20.0, 25.0, 26.0, 27.0, 27.5, 28.0, 28.5, 29.0]
       snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97] # Give exactly one of snr or mag_err
@@ -116,6 +127,11 @@ mockobservations:
         # Completeness(mag) = 0.5 * (1 + erf((SNR(mag) - snr50) / (sqrt(2) * width)))
         snr50: 5.0
         width: 1.0
+    F814W:
+      mag: [18.9, 23.9, 24.9, 25.9, 26.4, 26.9, 27.4, 27.9] # F606W mag - 1.1
+      snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97]
+      bias: [0.0, 0.0, 0.0, -0.005, -0.01, -0.02, -0.03, -0.04]
+      minerr: 0.01
 
 fit:
   # Optional. When run is true, the simulated catalog is fit with fit_sfh. A fit_sfh configuration is
@@ -129,7 +145,7 @@ fit:
   binning: # Required when run is true; same keys as data.binning in fit_sfh
     yfilter: F814W       # Must be mock-observed filters
     xcolor: F475W, F814W
-    ybins: range(20.5, 28.0; length=150)
+    ybins: range(19.5, 28.0; length=171)
     xbins: range(-0.75, 2.5; length=75)
   # Any of the following fit_sfh sections replaces the generated default, e.g., to start from a
   # different metallicity model or to fit with different tracks or BCs than were used to simulate.
