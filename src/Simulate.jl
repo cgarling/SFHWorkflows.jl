@@ -7,7 +7,7 @@ import StarFormationHistories as SFH
 import CSV
 import YAML
 using ArgCheck: @argcheck
-using BolometricCorrections: filternames, MH
+using BolometricCorrections: filternames
 using DelimitedFiles: writedlm
 using OrderedCollections: OrderedDict
 using StableRNGs: StableRNG
@@ -96,10 +96,6 @@ function simulate_catalog(config::AbstractDict)
     tracklib = parse_tracks(st)
     logAge = sort(collect(Float64, eval(Meta.parse(st["logAge"]))))
     MH_grid = collect(Float64, eval(Meta.parse(st["MH"])))
-    MH_lims = extrema(MH(tracklib))
-    if !all(m -> MH_lims[1] <= m <= MH_lims[2], MH_grid)
-        error("Invalid configuration: stellartrack.MH must lie within the range $MH_lims of the stellar track library.")
-    end
     bcdicts = config["bolometriccorrections"]
     @info "Loading bolometric corrections"
     bcs = parse_bcs(config)

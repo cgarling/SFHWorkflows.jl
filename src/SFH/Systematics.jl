@@ -134,15 +134,14 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
 
     # @threads for (i, (mh, logage)) in collect(enumerate(Iterators.product(unique_MH, unique_logAge))) # issorted(mdf_template_logAge) == true
     Threads.@threads for i in eachindex(unique_MH)
+        # For mh outside the range of tracklib, isochrone evaluates the tracks at the nearest [M/H] in tracklib and
+        # the bolometric corrections at mh
         mh = unique_MH[i]
-        # Deal with MH outside range of tracklib
-        tracklib_mh = clamp(mh, extrema(MH(tracklib))...)
-        # bclib_mh = clamp(unique_bc_MH[i], extrema(MH(bclib))...)
 
         Threads.@threads for j in eachindex(unique_logAge)
             logage = unique_logAge[j]
             ind = j + ((i-1) * length(unique_logAge)) # index into templates and other buffers for (i,j)
-            iso = isochrone(tracklib, bclib, logage, tracklib_mh, Av)
+            iso = isochrone(tracklib, bclib, logage, mh, Av)
             iso_mags = [getproperty(iso, k) for k in iso_symb]
             m_ini = iso.m_ini
             templates[ind] = SFH.partial_cmd_smooth(m_ini, iso_mags, err_funcs, yidx, xidxs, imf, 
