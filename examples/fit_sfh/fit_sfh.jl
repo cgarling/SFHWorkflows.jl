@@ -1,4 +1,5 @@
 # This example runs the SFH fitting workflow `fit_sfh` and shows available plotting utilities.
+# The plotting code also requires CairoMakie and YAML in the active environment: `]add CairoMakie YAML`
 using SFHWorkflows
 
 config = "./config.yml"

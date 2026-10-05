@@ -1,3 +1,5 @@
+# This example runs `simulate_catalog` on config.yml in this directory and plots the catalog, the input SFH, and the fit.
+# The plotting code also requires CairoMakie and YAML in the active environment: `]add CairoMakie YAML`
 using SFHWorkflows
 
 config = "./config.yml"
@@ -68,7 +70,7 @@ function cmd_panel!(fig, col, suffix, title)
     # hexagon grid spanning the full data range; sparse CMDs have no dense points and are drawn only as scatter
     if !all(smask)
         h = hexbin!(ax, xs, ys; weights = .!smask, threshold = 1, bins = 80, colorscale = log10)
-        Colorbar(fig[1, 2col], h; label = "Stars")
+        Colorbar(fig[1, 2col], h)
     end
     return ax
 end
@@ -113,4 +115,23 @@ else
     plot_truth!(axs...; color = :red, linestyle = :dash, label = "Truth")
     axislegend(axs[1]; position = :rb)
     save(plot_path2, fig)
+
+    # Fitted SFR in each logAge bin with its 16th to 84th percentile range, and the input SFR. The fit columns of
+    # result.table are suffixed with <track>_<bc>, ordered as in result.results
+    table = result.table
+    labels = [split(string(c), "_")[3:end] for c in propertynames(table) if startswith(string(c), "sfr_upper_")]
+    label = unique(first.(labels))[idx[1]] * "_" * unique(last.(labels))[idx[2]]
+    edges = vcat(table.logAge_lower[1], table.logAge_upper)
+    centers = (edges[begin:end-1] .+ edges[begin+1:end]) ./ 2
+    sfr_lower, sfr, sfr_upper = (getproperty(table, Symbol(s * label)) for s in ("sfr_lower_", "sfr_", "sfr_upper_"))
+    # SFRs are plotted in units of 10^p M⊙ yr⁻¹ so the tick labels stay short
+    p = floor(Int, log10(max(maximum(sfr_upper), maximum(truth.sfr))))
+    fig = Figure(size = (750, 450))
+    # Oldest on the left, as in the cumulative SFH figure
+    ax = Axis(fig[1, 1]; xlabel = rich("log", subscript("10"), "(Age [yr])"), ylabel = rich("SFR [10", superscript(replace(string(p), "-" => "−")), " M⊙ yr", superscript("−1"), "]"), xreversed = true)
+    stairs!(ax, vcat(truth.logAge_lower[1], truth.logAge_upper), exp10(-p) .* vcat(truth.sfr, truth.sfr[end]); step = :post, color = :red, linestyle = :dash, label = "Truth")
+    rangebars!(ax, centers, exp10(-p) .* sfr_lower, exp10(-p) .* sfr_upper; color = :black, whiskerwidth = 4)
+    scatter!(ax, centers, exp10(-p) .* sfr; color = :black, markersize = 6, label = "Fit")
+    axislegend(ax; position = :lt)
+    save(joinpath(fit_path, "results_sfr.pdf"), fig)
 end
