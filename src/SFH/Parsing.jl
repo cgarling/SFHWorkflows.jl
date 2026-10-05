@@ -224,6 +224,23 @@ function parse_filter_models(dict)
 end
 
 """
+    parse_gates(binning)
+Parses the optional `gates` entry of `binning` (the `data.binning` section of a fit_sfh configuration), a list of polygons
+each given as a list of at least 3 `[color, magnitude]` vertices, into a `Vector{Vector{NTuple{2, Float64}}}`.
+Hess diagram bins whose centers lie inside a gate are excluded from the fit. Returns an empty vector if there are no gates.
+"""
+function parse_gates(binning)
+    gates = Vector{NTuple{2, Float64}}[]
+    for (i, g) in enumerate(something(get(binning, "gates", nothing), []))
+        if !(g isa AbstractVector && length(g) >= 3 && all(v -> v isa AbstractVector && length(v) == 2 && all(x -> x isa Real, v), g))
+            error("Invalid configuration: data.binning.gates entry $i must be a list of at least 3 [color, magnitude] vertices.")
+        end
+        push!(gates, [(Float64(v[1]), Float64(v[2])) for v in g])
+    end
+    return gates
+end
+
+"""
     check_filter_models(needed, ast_filters, model_filters)
 Throws an error if a filter has both an AST model and a per-filter model, if any filter in `needed` has neither, or if
 an AST filter is not in `needed` (the AST models are joint functions of both AST filters).
@@ -305,6 +322,7 @@ function parse_config(config::AbstractDict)
     check_filter_models(unique(vcat(ystring, xstrings)), ast_filters, keys(filter_models))
     ybins = parse_range(config["data"]["binning"]["ybins"])
     xbins = parse_range(config["data"]["binning"]["xbins"])
+    gates = parse_gates(config["data"]["binning"])
     badval = isnothing(asts) ? 99.999 : asts["badval"]
     maxerr = isnothing(asts) ? Inf : get(asts, "maxerr", Inf)::Float64 # If maxerr not provided, use Inf
     minerr = isnothing(asts) ? 0.0 : get(asts, "minerr", 0.0)::Float64
@@ -323,7 +341,7 @@ function parse_config(config::AbstractDict)
     logAge = eval(Meta.parse(config["stellartracks"]["logAge"]))
     MH = eval(Meta.parse(config["stellartracks"]["MH"]))
 
-    return (phot_file=phot_file, ast_file=ast_file, ast_filters=ast_filters, filter_models=filter_models, filters=filters, badval=badval, maxerr=maxerr, minerr=minerr, xbins=xbins, ybins=ybins, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0, output_path=output_path, output_filename=config["output"]["filename"], ystring=ystring, xstrings=xstrings, logAge=logAge, MH=MH, T_max=T_max)
+    return (phot_file=phot_file, ast_file=ast_file, ast_filters=ast_filters, filter_models=filter_models, filters=filters, badval=badval, maxerr=maxerr, minerr=minerr, xbins=xbins, ybins=ybins, gates=gates, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0, output_path=output_path, output_filename=config["output"]["filename"], ystring=ystring, xstrings=xstrings, logAge=logAge, MH=MH, T_max=T_max)
 end
 
 end # module

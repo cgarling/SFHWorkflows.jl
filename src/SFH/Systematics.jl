@@ -210,15 +210,20 @@ function fit_sfh(MH_model0::SFH.AbstractMetallicityModel,
                  dmod, Av, err_funcs, complete_funcs, bias_funcs, imf,
                  unique_MH, unique_logAge, edges; 
                  normalize_value::Number=1, binary_model::SFH.AbstractBinaryModel=SFH.NoBinaries(),
-                 imf_mean::Number=SFH.mean(imf), T_max::Number=13.7,
+                 imf_mean::Number=SFH.mean(imf), T_max::Number=13.7, mask::AbstractArray{Bool}=falses(length(data)),
                  kws...)
 
     @argcheck mstar > 0
+    @argcheck length(mask) == length(data)
     # Construct templates
     all_templates = templates(tracklib, bclib, xstrings, ystring, dmod, Av, err_funcs, complete_funcs, bias_funcs,
                               imf, unique_MH, unique_logAge, edges;
                               normalize_value=normalize_value, binary_model=binary_model, imf_mean=imf_mean)
-    result = SFH.fit_sfh(MH_model0, disp_model0, SFH.stack_models(all_templates.templates), vec(data), all_templates.logAge, all_templates.MH;
+    # Bins masked by gates are dropped from both the data and the templates, so they do not enter the likelihood;
+    # the full templates are still returned for building model Hess diagrams
+    keep = .!vec(mask)
+    models = reduce(hcat, [view(vec(t), keep) for t in all_templates.templates])
+    result = SFH.fit_sfh(MH_model0, disp_model0, models, vec(data)[keep], all_templates.logAge, all_templates.MH;
                          x0=SFH.construct_x0_mdf(all_templates.logAge, T_max; normalize_value=mstar / normalize_value), kws...)
     return merge((result=result,), all_templates)
 end

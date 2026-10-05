@@ -74,7 +74,7 @@ result, h = fit_sfh("config.yml") # `h` is the observed Hess diagram as a StatsB
 ```
 
 The configuration defines
- - `data`: the photometry file, the Hess diagram binning, and the observational model for each filter used in the fit. The observational model (photometric error, bias, and completeness) is measured either from artificial star tests (`data.ASTs`) or from a tabulated signal-to-noise ratio or magnitude error curve for each filter (`data.filters`).
+ - `data`: the photometry file, the Hess diagram binning, and the observational model for each filter used in the fit. Optional polygons in color and magnitude (`data.binning.gates`) exclude regions of the Hess diagram, such as those with foreground contamination, from the fit. The observational model (photometric error, bias, and completeness) is measured either from artificial star tests (`data.ASTs`) or from a tabulated signal-to-noise ratio or magnitude error curve for each filter (`data.filters`).
  - `stellartracks` and `bolometriccorrections`: the stellar track libraries and bolometric correction grids, and the grid of ages and metallicities the SFH is measured on. The SFH is measured once for every combination of stellar track library and bolometric correction grid, and the spread between these results is reported as a systematic uncertainty.
  - `imf`, `binaries`, `properties` (distance, extinction, and an approximate stellar mass), and `metallicity` (the age-metallicity or mass-metallicity relation, with initial guesses for its parameters).
  - `plotting` and `output`.

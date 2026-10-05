@@ -12,7 +12,7 @@ See [the examples README](../README.md) for how to download and run the examples
 `simulate_catalog` writes the catalog (`results/catalog.txt`), the input SFH binned on the age grid (`results/catalog_truth.txt`), a copy of the configuration including the random seed (`results/input.yml`), and the fit to `results/fit/`. See the [main README](../../README.md#simulating-catalogs-simulate_catalog) for details.
 
 The script makes these figures:
- - `results/catalog_cmd.pdf`: color-magnitude diagrams of the true magnitudes and of the mock-observed magnitudes of the detected stars, limited to the Hess diagram used in the fit. Sparse regions are shown as individual stars and dense regions as a density map.
+ - `results/catalog_cmd.pdf`: color-magnitude diagrams of the true magnitudes and of the mock-observed magnitudes of the detected stars, limited to the Hess diagram used in the fit. Sparse regions are shown as individual stars and dense regions as a density map. Any gates in `fit.binning` are outlined; they exclude regions from the fit only, so the catalog contains all stars.
  - `results/fit/results_hess.pdf`: the simulated and best-fit model Hess diagrams with their residuals.
  - `results/fit/results_cumsfh.pdf`: the fitted cumulative SFH and mean metallicity with the input SFH overlaid.
  - `results/fit/results_sfr.pdf`: the fitted star formation rate in each age bin, with its 16th to 84th percentile range, and the input star formation rate.

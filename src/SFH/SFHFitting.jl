@@ -57,9 +57,15 @@ function fit_sfh(obsfile::AbstractString, astfile::Union{AbstractString, Nothing
                  MH_model0::SFH.AbstractMetallicityModel, disp_model0::SFH.AbstractDispersionModel, Mstar::Number, stellar_tracks, bcs,
                  dmod::Number, Av::Number, imf, MH, logAge, binary_model::SFH.AbstractBinaryModel, output_filename::AbstractString;
                  badval::Number=99.999, minerr::Number=0.0, maxerr::Number=0.2, plot_diagnostics::Bool=true, output_path::AbstractString=".",
-                 ast_filters=first(string.(filters), 2), filter_models=Dict{String, NamedTuple}(), T_max::Number=13.7) # filters=("mag1", "mag2")
+                 ast_filters=first(string.(filters), 2), filter_models=Dict{String, NamedTuple}(), T_max::Number=13.7,
+                 gates=Vector{NTuple{2, Float64}}[]) # filters=("mag1", "mag2")
     @argcheck length(xstrings) == 2
     @argcheck Mstar > 0
+    for (i, g) in enumerate(gates)
+        any(SFH.hess_mask(edges, [g])) || @warn "Gate $i contains no Hess diagram bin centers; its vertices must be (color, magnitude) pairs inside the binning range."
+    end
+    mask = SFH.hess_mask(edges, gates)
+    all(mask) && error("The gates cover every Hess diagram bin, leaving nothing to fit.")
     filters = string.(filters)
     ast_filters = isnothing(astfile) ? String[] : string.(ast_filters)
     # Isochrone magnitudes are ordered this way in Systematics.templates; models must match
@@ -93,7 +99,7 @@ function fit_sfh(obsfile::AbstractString, astfile::Union{AbstractString, Nothing
     xidxs = [findfirst(==(x), filters) for x in xstrings]
     h = SFH.bin_cmd(view(data, :, xidxs[1]) .- view(data, :, xidxs[2]), view(data, :, yidx); edges=edges)
     out_file = joinpath(output_path, output_filename)
-    result = systematics(MH_model0, disp_model0, Mstar, vec(h.weights), stellar_tracks, bcs, xstrings, ystring, dmod, Av, err, completeness, bias, imf, MH, logAge, edges; binary_model=binary_model, output=out_file, T_max)
+    result = systematics(MH_model0, disp_model0, Mstar, vec(h.weights), stellar_tracks, bcs, xstrings, ystring, dmod, Av, err, completeness, bias, imf, MH, logAge, edges; binary_model=binary_model, output=out_file, T_max, mask)
     # Write histograms to files
     ext = splitext(output_filename)[2]
     write_histogram(h, joinpath(output_path, splitext(output_filename)[1]*"_obshess"*ext))
@@ -109,7 +115,7 @@ function fit_sfh(obsfile::AbstractString, astfile::Union{AbstractString, Nothing
     return result, h
 end
 
-fit_sfh(@nospecialize(config::NamedTuple)) = fit_sfh(config.phot_file, config.ast_file, config.filters, config.xstrings, config.ystring, (config.xbins, config.ybins), config.MH_model0, config.disp_model0, config.Mstar, config.stellar_tracks, config.bcs, config.dmod, config.Av, config.imf, config.MH, config.logAge, config.binary_model, config.output_filename; badval=config.badval, minerr=config.minerr, maxerr=config.maxerr, plot_diagnostics=config.plot_diagnostics, output_path=config.output_path, config.ast_filters, config.filter_models, config.T_max)
+fit_sfh(@nospecialize(config::NamedTuple)) = fit_sfh(config.phot_file, config.ast_file, config.filters, config.xstrings, config.ystring, (config.xbins, config.ybins), config.MH_model0, config.disp_model0, config.Mstar, config.stellar_tracks, config.bcs, config.dmod, config.Av, config.imf, config.MH, config.logAge, config.binary_model, config.output_filename; badval=config.badval, minerr=config.minerr, maxerr=config.maxerr, plot_diagnostics=config.plot_diagnostics, output_path=config.output_path, config.ast_filters, config.filter_models, config.T_max, config.gates)
 fit_sfh(config_file::AbstractString) = fit_sfh(parse_config(config_file))
 
 

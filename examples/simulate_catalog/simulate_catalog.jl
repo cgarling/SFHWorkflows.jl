@@ -10,7 +10,7 @@ catalog, truth, fit = simulate_catalog(config)
 # Below is code to make common figures (CMDs of the catalog and the input SFH, compared to the fit if one was run).
 # If you'd rather make your own from the output files, you can disregard the code below.
 ###########################################
-using SFHWorkflows.SFHFitting.Parsing: strip_whitespace
+using SFHWorkflows.SFHFitting.Parsing: strip_whitespace, parse_gates
 using CairoMakie
 import YAML
 galaxy_name = "Simulated"
@@ -55,6 +55,8 @@ else
     limits = (extrema(eval(Meta.parse(binning["xbins"]))), extrema(eval(Meta.parse(binning["ybins"]))))
 end
 xlabel = join(xcolor, " - ")
+# Gates exclude regions of the Hess diagram from the fit only; the catalog contains all stars
+gates = isnothing(binning) ? [] : parse_gates(binning)
 
 # CMD panel; sparse regions are drawn as individual points and dense regions as a hexbin density
 function cmd_panel!(fig, col, suffix, title)
@@ -71,6 +73,9 @@ function cmd_panel!(fig, col, suffix, title)
     if !all(smask)
         h = hexbin!(ax, xs, ys; weights = .!smask, threshold = 1, bins = 80, colorscale = log10)
         Colorbar(fig[1, 2col], h)
+    end
+    for g in gates
+        lines!(ax, [Point2f(v[1], v[2]) for v in vcat(g, g[1:1])]; color = :darkorange, linewidth = 1.5)
     end
     return ax
 end
@@ -105,7 +110,7 @@ else
     # result.results is indexed by stellar track first, bolometric correction grid second
     idx = [1, 1]
     plot_path = joinpath(fit_path, "results_hess.pdf")
-    fig, axs = SFHWorkflows.SFHFitting.plot_cmd_residuals(h, result, xlabel, yfilter, galaxy_name, plot_path; idx = idx)
+    fig, axs = SFHWorkflows.SFHFitting.plot_cmd_residuals(h, result, xlabel, yfilter, galaxy_name, plot_path; idx = idx, gates = parse_gates(fitdict["data"]["binning"]))
     fig[0, :] = Label(fig, fitdict["stellartracks"]["track"*string(idx[1])]["name"] * " + " * fitdict["bolometriccorrections"]["bc"*string(idx[2])]["name"], fontsize = 22, halign = :center)
     save(plot_path, fig)
 
