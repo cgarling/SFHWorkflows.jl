@@ -147,6 +147,11 @@ fit:
     xcolor: F475W, F814W
     ybins: range(19.5, 28.0; length=171)
     xbins: range(-0.75, 2.5; length=75)
+    # Optional polygons of [color, magnitude] vertices to exclude from the fit (e.g., foreground contamination);
+    # Hess diagram bins whose centers lie inside a polygon are removed from both the data and the model.
+    # Empty means no gates; uncomment the example below to add one.
+    gates:
+    #   - [[1.5, 20.5], [2.5, 20.5], [2.5, 24.0], [1.5, 24.0]]
   # Any of the following fit_sfh sections replaces the generated default, e.g., to start from a
   # different metallicity model or to fit with different tracks or BCs than were used to simulate.
   metallicity:

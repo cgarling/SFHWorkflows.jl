@@ -7,7 +7,7 @@ config = "./config.yml"
 result, h = fit_sfh(config); # `result` contains results, h is a StatsBase.Histogram containing the observed Hess diagram
 
 # Below is code to make common figures (Hess diagram / residual plots and cumulative SFH / AMR). If you'd rather make your own from the SFH result files, you can disregard the code below.
-using SFHWorkflows.SFHFitting.Parsing: strip_whitespace
+using SFHWorkflows.SFHFitting.Parsing: strip_whitespace, parse_gates
 using CairoMakie
 import YAML
 # using LaTeXStrings: @L_str
@@ -44,7 +44,8 @@ plot_path = joinpath(dict["output"]["path"], "results_hess.pdf") # file path to 
 # result.results[idx...] will be the result used to make the plot.
 idx = [1,1] # Use the result for the first stellar track and first bolometric correction grid listed in `config`
 fig, axs = SFHWorkflows.SFHFitting.plot_cmd_residuals(h, result, xcolor, yfilter, galaxy_name, plot_path; idx=idx, 
-    c_clim=(-30,30), d_clim=(-12,12)); # Set limits on residual and significance panels
+    c_clim=(-30,30), d_clim=(-12,12), # Set limits on residual and significance panels
+    gates=parse_gates(dict["data"]["binning"])); # Outline the gates and hide residuals in the bins they exclude from the fit
 # This function saves the figure to the provided `plot_path`, but also 
 # returns the figure `fig` and axes `axs`, which we could further modify if we wanted to.
 # These are Makie.jl objects, see their documentation to further modify.

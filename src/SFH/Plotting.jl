@@ -33,7 +33,7 @@ end
 
 function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractString, 
                             galaxy_name::AbstractString, output_file::AbstractString; 
-                            idx=1, normalize_value::Number=1, c_clim=nothing, d_clim=nothing)
+                            idx=1, normalize_value::Number=1, c_clim=nothing, d_clim=nothing, gates=[])
     check_result_bounds(result, idx)
     xcolor = parse_xcolor(xcolor)
     coeffs = SFH.calculate_coeffs(result.results[idx...], result.logAge[idx...], result.MH[idx...])
@@ -42,6 +42,9 @@ function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractSt
     signif = (data.weights .- model_hess) ./
             sqrt.(model_hess)
     signif[data.weights .== 0] .= NaN
+    # Bins inside gates were excluded from the fit, so their residuals are not shown
+    mask = SFH.hess_mask(data.edges, gates)
+    signif[mask] .= NaN
 
     xlims = extrema(data.edges[1])
     ylims = reverse(extrema(data.edges[2]))  # reverse y-axis
@@ -67,13 +70,14 @@ function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractSt
 
     # Panel c: Data - Model
     cmd_diff = data.weights .- model_hess
+    cmd_diff[mask] .= NaN
     hm3_crange = if !isnothing(c_clim)
         c_clim
     else
         cr = floor(quantile(cmd_diff[abs.(cmd_diff) .> 1], 0.999) / 10) * 10
         (-cr, cr)
     end
-    hm3 = heatmap!(axs[3], data.edges[1], data.edges[2], data.weights .- model_hess; colormap = :seismic, colorrange = hm3_crange)
+    hm3 = heatmap!(axs[3], data.edges[1], data.edges[2], cmd_diff; colormap = :seismic, colorrange = hm3_crange)
     textlabel!(axs[3], 0.02, 0.82; text = "c) Data - Model", tl_kws...) # , align = (:left, :top)
 
     # Panel d: Significance
@@ -109,6 +113,9 @@ function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractSt
 
     # Shared axis limits and ticks
     for ax in axs
+        for g in gates
+            lines!(ax, [Point2f(v[1], v[2]) for v in vcat(g, g[1:1])]; color = :darkorange, linewidth = 1.5)
+        end
         limits!(ax, xlims, ylims)
         # hidespines!(ax, :t, :r)
     end

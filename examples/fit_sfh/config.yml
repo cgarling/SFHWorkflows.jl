@@ -32,6 +32,11 @@ data:
     xbins: range(-0.75, 2.5; length=75)
     yfilter: F814W
     xcolor: F475W, F814W
+    # Optional polygons of [color, magnitude] vertices to exclude from the fit (e.g., foreground contamination);
+    # Hess diagram bins whose centers lie inside a polygon are removed from both the data and the model.
+    # Empty means no gates; uncomment the example below to add one.
+    gates:
+    #   - [[1.5, 20.5], [2.5, 20.5], [2.5, 24.0], [1.5, 24.0]]
 
 imf:
   # Valid models: Kroupa2001, Chabrier2001BPL, Chabrier2001LogNormal, Chabrier2003, Chabrier2003System, Salpeter1955

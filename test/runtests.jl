@@ -1,6 +1,6 @@
 using SFHWorkflows
 using SFHWorkflows.SFHFitting.ASTs: snr_model, fill_nan
-using SFHWorkflows.SFHFitting.Parsing: parse_filter_models, check_filter_models, parse_binaries, parse_imf, parse_metallicity
+using SFHWorkflows.SFHFitting.Parsing: parse_gates, parse_filter_models, check_filter_models, parse_binaries, parse_imf, parse_metallicity
 using SFHWorkflows.Simulate: sfh_mass_fractions
 import StarFormationHistories as SFH
 using Test
@@ -41,6 +41,13 @@ end
     @test (m.bias, m.minerr, m.snr50, m.width) == ([0.0, -0.02], 0.02, 3.0, 0.5)
     @test_throws "exactly one of `snr` or `mag_err`" parse_filter_models(Dict("filters" => Dict("F606W" => Dict("mag" => [20, 25]))))
     @test_throws "exactly one of `snr` or `mag_err`" parse_filter_models(Dict("filters" => Dict("F606W" => Dict("mag" => [20, 25], "snr" => [100, 10], "mag_err" => [0.01, 0.1]))))
+end
+
+@testset "parse_gates" begin
+    @test isempty(parse_gates(Dict())) && isempty(parse_gates(Dict("gates" => nothing)))
+    @test parse_gates(Dict("gates" => [[[1, 20], [2.5, 20], [2, 24]]])) == [[(1.0, 20.0), (2.5, 20.0), (2.0, 24.0)]]
+    @test_throws "entry 2 must be a list of at least 3" parse_gates(Dict("gates" => [[[1, 20], [2, 20], [2, 24]], [[1, 20], [2, 20]]]))
+    @test_throws "entry 1 must be a list of at least 3" parse_gates(Dict("gates" => [[[1, 20, 3], [2, 20], [2, 24]]]))
 end
 
 @testset "check_filter_models" begin
