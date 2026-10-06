@@ -206,6 +206,27 @@ function write_masstable(fname::AbstractString, table)
 end
 write_masstable(::Nothing, ::Any) = nothing
 
+# Convergence of one optimization from its Optim.jl result; termination_code requires Optim 1.12
+optim_status(r) = (converged = SFH.Optim.converged(r),
+                   termination = isdefined(SFH.Optim, :termination_code) ? string(SFH.Optim.termination_code(r)) : "unknown",
+                   iterations = SFH.Optim.iterations(r), f_calls = SFH.Optim.f_calls(r), g_residual = Float64(SFH.Optim.g_residual(r)))
+# One row of the convergence table for the fit of one stellar track library and BC grid: the status of its MAP and MLE
+# optimizations, its log likelihood at the MLE, and the time taken to build its templates and fit them
+function fit_status(name::AbstractString, result::SFH.CompositeBFGSResult, time::Real)
+    m, l = optim_status(result.map.result), optim_status(result.mle.result)
+    return (; name, map_converged=m.converged, map_termination=m.termination, map_iterations=m.iterations, map_f_calls=m.f_calls,
+            map_g_residual=m.g_residual, mle_converged=l.converged, mle_termination=l.termination, mle_iterations=l.iterations,
+            mle_f_calls=l.f_calls, mle_g_residual=l.g_residual, mle_loglikelihood=-Float64(SFH.Optim.minimum(result.mle.result)),
+            time=Float64(time))
+end
+function write_fittable(fname::AbstractString, table)
+    _mkpath(fname) # Ensure the directory exists
+    transform(col, val) = val
+    transform(col, val::AbstractFloat) = @sprintf("%.6g", val)
+    CSV.write(fname, table; delim=' ', transform=transform)
+end
+write_fittable(::Nothing, ::Any) = nothing
+
 function fit_sfh(MH_model0::SFH.AbstractMetallicityModel,
                  disp_model0::SFH.AbstractDispersionModel,
                  mstar::Number, # Estimate of stellar mass of galaxy
@@ -269,6 +290,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
         birth_masses = Array{Float64}(undef, n, m, 3)
         background_stars = Array{Float64}(undef, n, m, 3) # Expected number of background stars
         model_hess = Matrix{Matrix{Float64}}(undef, n, m)  # Best-fit model Hess diagrams, including the background
+        status = Matrix{Any}(undef, n, m)                  # Convergence of each fit (fit_status)
         # present_masses = Matrix{Float64}(undef, nsolutions, 3)
         tables = Matrix{Table}(undef, n, m)
 
@@ -277,10 +299,15 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
             tracklib = tracklibs[i]
             Threads.@threads for j in eachindex(bclibs)
                 bclib = bclibs[j]
-                fit_result = fit_sfh(MH_model0, disp_model0, mstar, data, tracklib, bclib, xstrings,
+                t = @elapsed fit_result = fit_sfh(MH_model0, disp_model0, mstar, data, tracklib, bclib, xstrings,
                                     ystring, dmod, Av, err_funcs,
                                     complete_funcs, bias_funcs, imf, unique_MH, unique_logAge, edges; normalize_value=normalize_value,
                                     binary_model=binary_model, imf_mean=imf_mean, T_max=T_max, background, kws...)
+                s = status[i,j] = fit_status(gridname(tracklib) * "_" * gridname(bclib), fit_result[1], t)
+                for (stage, conv, term, iter) in (("MAP", s.map_converged, s.map_termination, s.map_iterations),
+                                                  ("MLE", s.mle_converged, s.mle_termination, s.mle_iterations))
+                    conv || @warn "The $stage optimization of the $(s.name) fit did not converge: stopped by $term after $iter iterations."
+                end
                 results[i,j] = fit_result[1]
                 templates[i,j] = fit_result.templates
                 logAge[i,j] = fit_result.logAge
@@ -356,6 +383,12 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                               background_stars_upper = vec(background_stars[:,:,3]))
         end
         write_masstable(isnothing(output) ? nothing : splitext(output)[1]*"_mass"*splitext(output)[2], masstable)
+        # Same row order as masstable
+        convergence = Table([s for s in vec(status)])
+        write_fittable(isnothing(output) ? nothing : splitext(output)[1]*"_convergence"*splitext(output)[2], convergence)
+        nconv = count(s -> s.map_converged && s.mle_converged, convergence)
+        nconv == length(convergence) ? @info("$nconv of $nconv fits converged") :
+            @warn("$nconv of $(length(convergence)) fits converged; see the _convergence output file")
 
         # Derive systematic uncertainty on cum_sfh, mean_MH by simply taking the extrema
         # of the results for each combination of inputs
@@ -380,7 +413,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
         # If output::AbstractString, will try to write final_table to output
         write_systable(output, final_table)
         return (results=results, templates=templates, logAge=logAge, MH=MH, model_hess=model_hess,
-                table=final_table)
+                table=final_table, convergence=convergence)
     finally
         BLAS.set_num_threads(blas_threads)
     end
