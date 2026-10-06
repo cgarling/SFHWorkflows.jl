@@ -12,6 +12,7 @@ using ArgCheck: @argcheck
 using Printf: @printf, @sprintf, Format, format
 using LinearAlgebra: BLAS
 using StatsBase: quantile
+import Optim
 # using Interpolations: interpolate, Gridded, Linear #, Throw, extrapolate, Flat
 # using Roots: find_zero # For taus
 
@@ -206,17 +207,16 @@ function write_masstable(fname::AbstractString, table)
 end
 write_masstable(::Nothing, ::Any) = nothing
 
-# Convergence of one optimization from its Optim.jl result; termination_code requires Optim 1.12
-optim_status(r) = (converged = SFH.Optim.converged(r),
-                   termination = isdefined(SFH.Optim, :termination_code) ? string(SFH.Optim.termination_code(r)) : "unknown",
-                   iterations = SFH.Optim.iterations(r), f_calls = SFH.Optim.f_calls(r), g_residual = Float64(SFH.Optim.g_residual(r)))
+# Convergence of one optimization from its Optim.jl result
+optim_status(r) = (converged = Optim.converged(r), termination = string(Optim.termination_code(r)), iterations = Optim.iterations(r),
+                   f_calls = Optim.f_calls(r), g_residual = Float64(Optim.g_residual(r)))
 # One row of the convergence table for the fit of one stellar track library and BC grid: the status of its MAP and MLE
 # optimizations, its log likelihood at the MLE, and the time taken to build its templates and fit them
 function fit_status(name::AbstractString, result::SFH.CompositeBFGSResult, time::Real)
     m, l = optim_status(result.map.result), optim_status(result.mle.result)
     return (; name, map_converged=m.converged, map_termination=m.termination, map_iterations=m.iterations, map_f_calls=m.f_calls,
             map_g_residual=m.g_residual, mle_converged=l.converged, mle_termination=l.termination, mle_iterations=l.iterations,
-            mle_f_calls=l.f_calls, mle_g_residual=l.g_residual, mle_loglikelihood=-Float64(SFH.Optim.minimum(result.mle.result)),
+            mle_f_calls=l.f_calls, mle_g_residual=l.g_residual, mle_loglikelihood=-Float64(Optim.minimum(result.mle.result)),
             time=Float64(time))
 end
 function write_fittable(fname::AbstractString, table)
