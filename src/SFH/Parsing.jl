@@ -337,6 +337,7 @@ function parse_config(config::AbstractDict)
     YAML.write_file(joinpath(output_path, "input.yml"), config)
 
     data = parse_data(config)
+    background = parse_background(config)
     imf = parse_imf(config)
     binary_model = parse_binaries(config)
     @info "Loading stellar tracks"
@@ -352,7 +353,7 @@ function parse_config(config::AbstractDict)
     logAge = eval(Meta.parse(config["stellartracks"]["logAge"]))
     MH = eval(Meta.parse(config["stellartracks"]["MH"]))
 
-    return (; data..., plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0, output_path=output_path, output_filename=config["output"]["filename"], logAge=logAge, MH=MH, T_max=T_max)
+    return (; data..., background, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0, output_path=output_path, output_filename=config["output"]["filename"], logAge=logAge, MH=MH, T_max=T_max)
 end
 
 
@@ -440,12 +441,13 @@ function restrict(p::Distributions.ContinuousUnivariateDistribution, lo, hi, nam
 end
 
 """
-    parse_parameters(dict, binary_model)
+    parse_parameters(dict, binary_model; background::Bool=true)
 Parses the `parameters` section of a fit_ssp configuration into a `NamedTuple` with a fixed value or prior for each of
 `logAge`, `MH`, `dmod`, `Av`, `binary_fraction`, and `background_fraction`. Age may be given as `logAge` or `age` (Gyr) and
-distance as `distance_modulus` or `distance` (pc).
+distance as `distance_modulus` or `distance` (pc). Without a `background` (`data.background: none`), the background
+fraction is fixed to 0.
 """
-function parse_parameters(dict, binary_model)
+function parse_parameters(dict, binary_model; background::Bool=true)
     p = dict["parameters"]
     function one_of(a, b, fb)
         haskey(p, a) == haskey(p, b) && error("Invalid configuration: give exactly one of parameters.$a or parameters.$b.")
@@ -462,7 +464,13 @@ function parse_parameters(dict, binary_model)
         haskey(p, "binary_fraction") || error("Invalid configuration: parameters.binary_fraction is required for binaries.model $(nameof(typeof(binary_model))).")
         restrict(parse_prior(p["binary_fraction"]), 0, 1, "binary_fraction")
     end
-    background_fraction = restrict(parse_prior(get(p, "background_fraction", "Uniform(0, 1)")), 0, 1, "background_fraction")
+    background_fraction = if background
+        restrict(parse_prior(get(p, "background_fraction", "Uniform(0, 1)")), 0, 1, "background_fraction")
+    else
+        f = parse_prior(get(p, "background_fraction", 0.0))
+        f isa Real && iszero(f) || error("Invalid configuration: data.background: none fixes the background fraction to 0, so parameters.background_fraction must be omitted or 0.")
+        f
+    end
     return (; logAge, MH=required("MH"), dmod, Av=required("Av"), binary_fraction, background_fraction)
 end
 
@@ -478,15 +486,18 @@ function parse_ssp_binaries(dict)
 end
 
 # Optional background Hess diagram source in `data.background`: a field photometry file with the same filter columns as
-# the photometry, or a Hess diagram file written by write_histogram, and the fraction of the background spread uniformly
+# the photometry, or a Hess diagram file written by write_histogram, and the fraction of the background spread uniformly.
+# Without the section the background is uniform; `background: none` disables it.
 function parse_background(dict)
     b = get(dict["data"], "background", nothing)
-    isnothing(b) && return (photometry_file=nothing, hess_file=nothing, floor=0.05)
+    isnothing(b) && return (photometry_file=nothing, hess_file=nothing, floor=0.05, enabled=true)
+    b == "none" && return (photometry_file=nothing, hess_file=nothing, floor=0.05, enabled=false)
+    b isa AbstractDict || error("Invalid configuration: data.background must be `none` or a section with photometry_file or hess_file.")
     haskey(b, "photometry_file") == haskey(b, "hess_file") && error("Invalid configuration: data.background must give exactly one of photometry_file or hess_file.")
     path(k) = haskey(b, k) ? joinpath(dict["data"]["path"], b[k]) : nothing
     floor = Float64(get(b, "floor", 0.05))
     0 <= floor <= 1 || error("Invalid configuration: data.background.floor must be between 0 and 1.")
-    return (photometry_file=path("photometry_file"), hess_file=path("hess_file"), floor)
+    return (photometry_file=path("photometry_file"), hess_file=path("hess_file"), floor, enabled=true)
 end
 
 """
@@ -501,8 +512,9 @@ function parse_ssp_config(file::AbstractString)
 end
 function parse_ssp_config(config::AbstractDict)
     data = parse_data(config)
+    background = parse_background(config)
     binary_model = parse_ssp_binaries(config)
-    parameters = parse_parameters(config, binary_model)
+    parameters = parse_parameters(config, binary_model; background=background.enabled)
     sampling = get(config, "sampling", OrderedDict{String, Any}())
     nfree = count(v -> !(v isa Real), parameters)
     nwalkers = Int(get(sampling, "nwalkers", max(16, 4 * nfree)))
@@ -512,7 +524,7 @@ function parse_ssp_config(config::AbstractDict)
     stellar_tracks = parse_tracks(config)
     @info "Loading bolometric corrections"
     bcs = parse_bcs(config)
-    return (; data..., background=parse_background(config), imf=parse_imf(config), binary_model, parameters, stellar_tracks, bcs,
+    return (; data..., background, imf=parse_imf(config), binary_model, parameters, stellar_tracks, bcs,
             ngrid=Tuple(Int.(get(fit, "ngrid", [16, 12]))), restarts=Int(get(fit, "restarts", 3)), run_sampling=Bool(get(sampling, "run", true)),
             nsteps=Int(get(sampling, "nsteps", 3000)), nburnin=Int(get(sampling, "nburnin", 1000)), nwalkers,
             seed=get(sampling, "seed", nothing), plot_diagnostics=Bool(get(get(config, "plotting", Dict()), "diagnostics", true)),

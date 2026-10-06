@@ -216,7 +216,7 @@ function fit_sfh(MH_model0::SFH.AbstractMetallicityModel,
                  unique_MH, unique_logAge, edges; 
                  normalize_value::Number=1, binary_model::SFH.AbstractBinaryModel=SFH.NoBinaries(),
                  imf_mean::Number=SFH.mean(imf), T_max::Number=13.7, mask::AbstractArray{Bool}=falses(length(data)),
-                 kws...)
+                 background=nothing, background_floor::Number=0.05, kws...)
 
     @argcheck mstar > 0
     @argcheck length(mask) == length(data)
@@ -228,9 +228,14 @@ function fit_sfh(MH_model0::SFH.AbstractMetallicityModel,
     # the full templates are still returned for building model Hess diagrams
     keep = .!vec(mask)
     models = reduce(hcat, [view(vec(t), keep) for t in all_templates.templates])
+    # `background` is the background shape over every bin, or `nothing` for no background
+    bg = isnothing(background) ? SFH.NoBackground() : SFH.HessBackground(view(vec(background), keep); floor=background_floor)
     result = SFH.fit_sfh(MH_model0, disp_model0, models, vec(data)[keep], all_templates.logAge, all_templates.MH;
-                         x0=SFH.construct_x0_mdf(all_templates.logAge, T_max; normalize_value=mstar / normalize_value), kws...)
-    return merge((result=result,), all_templates)
+                         x0=SFH.construct_x0_mdf(all_templates.logAge, T_max; normalize_value=mstar / normalize_value), background=bg, kws...)
+    # Best-fit expected number of background stars in every bin; masked bins have none
+    bg_hess = zeros(length(data))
+    isnothing(background) || (bg_hess[keep] .= result.mle.bg_model.b .* result.mle.bg_model.shape)
+    return merge((result=result, background=bg_hess), all_templates)
 end
 
 function systematics(MH_model0::SFH.AbstractMetallicityModel,
@@ -243,7 +248,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                      unique_MH, unique_logAge, edges; 
                      normalize_value::Number=1, binary_model::SFH.AbstractBinaryModel=SFH.NoBinaries(),
                      imf_mean::Number=SFH.mean(imf), T_max::Number=13.7, sfr_floor::Number=1e-10,
-                     output::Union{AbstractString, Nothing}=nothing,
+                     output::Union{AbstractString, Nothing}=nothing, background=nothing,
                      kws...)
 
     @argcheck length(tracklibs) >= 1
@@ -262,6 +267,8 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
         logAge = Matrix{Vector{Float64}}(undef, n, m) # These should be the same for every solution
         MH = Matrix{Vector{Float64}}(undef, n, m)     # These should be the same for every solution
         birth_masses = Array{Float64}(undef, n, m, 3)
+        background_stars = Array{Float64}(undef, n, m, 3) # Expected number of background stars
+        model_hess = Matrix{Matrix{Float64}}(undef, n, m)  # Best-fit model Hess diagrams, including the background
         # present_masses = Matrix{Float64}(undef, nsolutions, 3)
         tables = Matrix{Table}(undef, n, m)
 
@@ -273,7 +280,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                 fit_result = fit_sfh(MH_model0, disp_model0, mstar, data, tracklib, bclib, xstrings,
                                     ystring, dmod, Av, err_funcs,
                                     complete_funcs, bias_funcs, imf, unique_MH, unique_logAge, edges; normalize_value=normalize_value,
-                                    binary_model=binary_model, imf_mean=imf_mean, T_max=T_max, kws...)
+                                    binary_model=binary_model, imf_mean=imf_mean, T_max=T_max, background, kws...)
                 results[i,j] = fit_result[1]
                 templates[i,j] = fit_result.templates
                 logAge[i,j] = fit_result.logAge
@@ -281,6 +288,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
 
                 coeffs = SFH.calculate_coeffs(fit_result[1], fit_result.logAge, fit_result.MH) .* normalize_value
                 ul, cum_sfh, sfr, mean_MH = SFH.calculate_cum_sfr(coeffs, fit_result.logAge, fit_result.MH, T_max; sorted=true)
+                model_hess[i,j] = sum((coeffs ./ normalize_value) .* fit_result.templates) .+ reshape(fit_result.background, size(first(fit_result.templates)))
                 
                 # Calculate quantiles for uncertainties
                 quantile_results_map = SFH.cum_sfr_quantiles(fit_result[1].map, fit_result.logAge, fit_result.MH, T_max, 10_000, (0.16, 0.5, 0.84))
@@ -312,6 +320,10 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
 
                 # Write birth masses into output array
                 birth_masses[i, j, :] .= (SFH.integrate_sfr(logAge_l, logAge_u, quantile_results[2][:, ii]) for ii in 1:3)
+                # The background is the last fitted parameter. Its quantiles come from the MAP samples, which give a useful
+                # upper limit when the MLE background is ~0 (as for the SFRs above)
+                bsamples = view(quantile_results_map.samples, lastindex(quantile_results_map.samples, 1), :)
+                background_stars[i, j, :] .= isnothing(background) ? 0.0 : quantile(bsamples, (0.16, 0.5, 0.84))
 
                 # The complicated @eval is necessary because TypedTables.Table cannot be constructed
                 # from separate data and column names
@@ -339,6 +351,10 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
         @info "SFH fits complete; measuring statistics"
         masstable = Table(name = vec([gridname(i) * "_" * gridname(j) for i=tracklibs, j=bclibs]),
                         mstar_lower = vec(birth_masses[:,:,1]), mstar = vec(birth_masses[:,:,2]), mstar_upper = vec(birth_masses[:,:,3]))
+        if !isnothing(background)
+            masstable = Table(masstable; background_stars_lower = vec(background_stars[:,:,1]), background_stars = vec(background_stars[:,:,2]),
+                              background_stars_upper = vec(background_stars[:,:,3]))
+        end
         write_masstable(isnothing(output) ? nothing : splitext(output)[1]*"_mass"*splitext(output)[2], masstable)
 
         # Derive systematic uncertainty on cum_sfh, mean_MH by simply taking the extrema
@@ -363,7 +379,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                             rtable)
         # If output::AbstractString, will try to write final_table to output
         write_systable(output, final_table)
-        return (results=results, templates=templates, logAge=logAge, MH=MH, 
+        return (results=results, templates=templates, logAge=logAge, MH=MH, model_hess=model_hess,
                 table=final_table)
     finally
         BLAS.set_num_threads(blas_threads)
