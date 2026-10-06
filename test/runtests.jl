@@ -1,7 +1,7 @@
 using SFHWorkflows
 using SFHWorkflows.SFHFitting.ASTs: snr_model, fill_nan
 using SFHWorkflows.SFHFitting.Parsing: parse_gates, parse_filter_models, check_filter_models, parse_binaries, parse_imf, parse_metallicity,
-    parse_prior, age_prior, distance_prior, restrict, parse_parameters, TransformedPrior
+    parse_prior, age_prior, distance_prior, restrict, parse_parameters, TransformedPrior, parse_background
 import Distributions
 using SFHWorkflows.Simulate: sfh_mass_fractions
 using SFHWorkflows.SFHFitting.Plotting: sparse_mask
@@ -53,6 +53,16 @@ end
     @test parse_gates(Dict("gates" => [[[1, 20], [2.5, 20], [2, 24]]])) == [[(1.0, 20.0), (2.5, 20.0), (2.0, 24.0)]]
     @test_throws "entry 2 must be a list of at least 3" parse_gates(Dict("gates" => [[[1, 20], [2, 20], [2, 24]], [[1, 20], [2, 20]]]))
     @test_throws "entry 1 must be a list of at least 3" parse_gates(Dict("gates" => [[[1, 20, 3], [2, 20], [2, 24]]]))
+end
+
+@testset "parse_background" begin
+    cfg(b) = Dict("data" => Dict("path" => "dir", "background" => b))
+    @test parse_background(Dict("data" => Dict("path" => "dir"))) == (photometry_file=nothing, hess_file=nothing, floor=0.05, enabled=true)
+    @test !parse_background(cfg("none")).enabled
+    @test parse_background(cfg(Dict("hess_file" => "f.txt", "floor" => 0.1))) == (photometry_file=nothing, hess_file=joinpath("dir", "f.txt"), floor=0.1, enabled=true)
+    @test_throws "exactly one of photometry_file or hess_file" parse_background(cfg(Dict("floor" => 0.1)))
+    @test_throws "must be `none` or a section" parse_background(cfg("flat"))
+    @test_throws "floor must be between 0 and 1" parse_background(cfg(Dict("hess_file" => "f.txt", "floor" => 2)))
 end
 
 @testset "check_filter_models" begin
@@ -116,6 +126,12 @@ end
     @test_throws "requires binaries.model" parse_parameters(Dict("parameters" => p), SFH.NoBinaries())
     @test parse_parameters(Dict("parameters" => Dict(k => v for (k, v) in p if k != "binary_fraction")), SFH.NoBinaries()).binary_fraction == 0
     @test_throws "parameters.binary_fraction is required" parse_parameters(Dict("parameters" => Dict(k => v for (k, v) in p if k != "binary_fraction")), SFH.RandomBinaryPairs(0.0))
+    # data.background: none fixes the background fraction to 0
+    @test parse_parameters(Dict("parameters" => p), SFH.BinaryMassRatio(0.0); background=false).background_fraction === 0.0
+    @test parse_parameters(Dict("parameters" => merge(p, Dict("background_fraction" => 0))), SFH.BinaryMassRatio(0.0); background=false).background_fraction == 0
+    for bf in ("Uniform(0, 0.5)", 0.1)
+        @test_throws "background_fraction must be omitted or 0" parse_parameters(Dict("parameters" => merge(p, Dict("background_fraction" => bf))), SFH.BinaryMassRatio(0.0); background=false)
+    end
 end
 
 @testset "parse_binaries" begin

@@ -17,7 +17,7 @@ using TypedTables: Table
 using CairoMakie: Figure, Axis, Legend, LineElement, MarkerElement, Point2f, WilkinsonTicks, cgrad, save, axislegend, @L_str,
     hist!, scatter!, hexbin!, lines!, vlines!, hlines!, ylims!, hidedecorations!, hidexdecorations!, hideydecorations!,
     linkxaxes!, rowgap!
-using ..SFHFitting: observational_models, write_diagnostics, gate_mask, obs_hess, write_histogram, read_histogram
+using ..SFHFitting: observational_models, write_diagnostics, gate_mask, obs_hess, write_histogram, background_hess
 using ..SFHFitting.Parsing: parse_ssp_config, restrict
 using ..SFHFitting.Systematics: iso_filters
 using ..SFHFitting.Plotting: sparse_mask
@@ -68,17 +68,6 @@ function restrict_parameters(parameters, stellar_tracks, bcs)
     la_lo = maximum(age_limit(tl, first(bcs), la0, lo_bound, mh, av) for tl in stellar_tracks)
     la_hi = minimum(age_limit(tl, first(bcs), la0, hi_bound, mh, av) for tl in stellar_tracks)
     return merge(parameters, (logAge=restrict(parameters.logAge, la_lo, la_hi, "logAge"), MH, Av))
-end
-
-# Shape of the background over the Hess diagram, from field photometry or a Hess diagram file with matching edges
-function background_hess(bg, filters, xstrings, ystring, edges)
-    isnothing(bg.photometry_file) && isnothing(bg.hess_file) && return nothing
-    isnothing(bg.photometry_file) || return obs_hess(bg.photometry_file, filters, xstrings, ystring, edges).weights
-    h = read_histogram(bg.hess_file)
-    if !all(length(a) == length(b) && all(a .≈ b) for (a, b) in zip(h.edges, edges))
-        error("Invalid configuration: the bin edges of data.background.hess_file $(bg.hess_file) do not match data.binning.")
-    end
-    return h.weights
 end
 
 # Fits one combination of stellar track library and BC grid, sampling the posterior with `seed` if requested

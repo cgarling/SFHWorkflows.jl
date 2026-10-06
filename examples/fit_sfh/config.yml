@@ -37,6 +37,13 @@ data:
     # Empty means no gates; uncomment the example below to add one.
     gates:
     #   - [[1.5, 20.5], [2.5, 20.5], [2.5, 24.0], [1.5, 24.0]]
+  # Optional. Stars the model populations cannot explain (e.g., background galaxies or foreground stars) are fit
+  # with a background. Without this section we fit a uniform background over the Hess diagram. To use the Hess
+  # diagram of a nearby field instead, give its photometry (same columns as photometry_file) or a Hess diagram
+  # file with the same bins. Write `background: none` to fit without a background.
+  background:
+  #   photometry_file: field.dat
+  #   floor: 0.05 # Fraction of the background spread uniformly, for contaminants not in the field sample
 
 imf:
   # Valid models: Kroupa2001, Chabrier2001BPL, Chabrier2001LogNormal, Chabrier2003, Chabrier2003System, Salpeter1955

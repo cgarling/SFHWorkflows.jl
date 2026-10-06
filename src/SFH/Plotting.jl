@@ -65,9 +65,7 @@ function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractSt
                             galaxy_name::AbstractString, output_file::AbstractString; 
                             idx=1, normalize_value::Number=1, kws...)
     check_result_bounds(result, idx)
-    coeffs = SFH.calculate_coeffs(result.results[idx...], result.logAge[idx...], result.MH[idx...])
-    model_hess = sum(coeffs .* result.templates[idx...] ./ normalize_value)
-    return plot_cmd_residuals(data, model_hess, xcolor, yfilter, galaxy_name, output_file; kws...)
+    return plot_cmd_residuals(data, result.model_hess[idx...] ./ normalize_value, xcolor, yfilter, galaxy_name, output_file; kws...)
 end
 # The model Hess diagram `model_hess` is a matrix with the same size as `data.weights`
 function plot_cmd_residuals(data::Histogram, model_hess::AbstractMatrix, xcolor, yfilter::AbstractString,

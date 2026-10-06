@@ -30,6 +30,7 @@ data:
   # Optional. Stars that are not in the cluster (e.g., field stars) are fit with a background. Without this
   # section the background is uniform over the Hess diagram. To use the Hess diagram of a nearby field instead,
   # give its photometry (same columns as photometry_file) or a Hess diagram file with the same bins.
+  # Write `background: none` to fit without a background.
   # background:
   #   photometry_file: field.dat
   #   floor: 0.05 # Fraction of the background spread uniformly, for field-star types not in the field sample

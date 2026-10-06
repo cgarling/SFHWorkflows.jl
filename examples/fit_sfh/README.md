@@ -17,6 +17,7 @@ Edit the `data` section of `config.yml`:
  - `photometry`: the photometry file, a whitespace-delimited text file with one column of apparent magnitudes per filter, and the filter name of each column.
  - `ASTs`: the artificial star test file, with columns (input magnitude 1, input magnitude 2, output - input magnitude 1, output - input magnitude 2), and the value of the output - input columns that indicates a non-detection. Alternatively, comment out `ASTs` and give a tabulated signal-to-noise ratio or magnitude error curve for each filter under `filters`.
  - `binning`: the filters and the range and bin sizes of the Hess diagram to fit, and optionally `gates`, polygons in color and magnitude whose bins are excluded from the fit.
+ - `background` (optional): the shape of the background of contaminating stars, from the photometry of a nearby control field or a Hess diagram file. The default is a uniform background, which handles contamination spread over the Hess diagram; give a control field if the contamination is concentrated, e.g., in faint background galaxies (see the [main README](../../README.md#background)).
 
 Then update `properties` (distance modulus, extinction, and an approximate stellar mass) for your galaxy, and `bolometriccorrections` for your filter system.
 
