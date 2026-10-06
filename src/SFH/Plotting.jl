@@ -31,13 +31,49 @@ function check_result_bounds(result, idx)
     end
 end
 
+# Boolean mask of the points (x, y) that fall in sparsely populated bins, with fewer than `threshold` points in a
+# `bins` × `bins` grid over their range; used to draw sparse regions of dense scatter plots as points and the rest as a
+# density
+function sparse_mask(x, y; bins = 80, threshold = 25)
+    xmin, xmax = extrema(x)
+    ymin, ymax = extrema(y)
+
+    nx = ny = bins
+
+    # Map each point to a rectangular density bin.
+    # Rectangular bins are fine here; they're just being used to decide
+    # which points are worth drawing individually.
+    ix = clamp.(floor.(Int, (x .- xmin) ./ (xmax - xmin) .* nx) .+ 1, 1, nx)
+    iy = clamp.(floor.(Int, (y .- ymin) ./ (ymax - ymin) .* ny) .+ 1, 1, ny)
+
+    counts = zeros(Int, nx, ny)
+
+    @inbounds for i in eachindex(ix)
+        counts[ix[i], iy[i]] += 1
+    end
+
+    keep = BitVector(undef, length(x))
+
+    @inbounds for i in eachindex(keep)
+        keep[i] = counts[ix[i], iy[i]] < threshold
+    end
+
+    return keep
+end
+
 function plot_cmd_residuals(data::Histogram, result, xcolor, yfilter::AbstractString, 
                             galaxy_name::AbstractString, output_file::AbstractString; 
-                            idx=1, normalize_value::Number=1, c_clim=nothing, d_clim=nothing, gates=[])
+                            idx=1, normalize_value::Number=1, kws...)
     check_result_bounds(result, idx)
-    xcolor = parse_xcolor(xcolor)
     coeffs = SFH.calculate_coeffs(result.results[idx...], result.logAge[idx...], result.MH[idx...])
     model_hess = sum(coeffs .* result.templates[idx...] ./ normalize_value)
+    return plot_cmd_residuals(data, model_hess, xcolor, yfilter, galaxy_name, output_file; kws...)
+end
+# The model Hess diagram `model_hess` is a matrix with the same size as `data.weights`
+function plot_cmd_residuals(data::Histogram, model_hess::AbstractMatrix, xcolor, yfilter::AbstractString,
+                            galaxy_name::AbstractString, output_file::AbstractString; c_clim=nothing, d_clim=nothing, gates=[])
+    @argcheck size(model_hess) == size(data.weights)
+    xcolor = parse_xcolor(xcolor)
     # Significance = Residual / σ; sometimes called Pearson residual
     signif = (data.weights .- model_hess) ./
             sqrt.(model_hess)

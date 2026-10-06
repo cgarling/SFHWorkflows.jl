@@ -2,9 +2,23 @@
 [StarFormationHistories.jl](https://github.com/cgarling/StarFormationHistories.jl) contains highly modular components for measuring resolved star formation histories from high-precision color magnitude diagrams. This package provides standardized workflows for making these measurements that can be configured and run from simple YAML configuration files:
 
  - [`fit_sfh`](#measuring-star-formation-histories-fit_sfh) measures the star formation history (SFH) of a resolved stellar population from a catalog of photometry and a model of the observational errors and completeness.
+ - [`fit_ssp`](#fitting-single-stellar-populations-fit_ssp) fits the age, metallicity, distance, extinction, and binary fraction of a single stellar population, such as a star cluster, and its birth stellar mass, with uncertainties from posterior sampling.
  - [`simulate_catalog`](#simulating-catalogs-simulate_catalog) samples a mock photometric catalog from a known SFH, optionally applies observational errors and incompleteness, and optionally fits the result with `fit_sfh` so you can check how well the input SFH is recovered.
 
 Users may also be interested in [BolometricCorrections.jl](https://github.com/cgarling/BolometricCorrections.jl) and [StellarTracks.jl](https://github.com/cgarling/StellarTracks.jl), which are used to interpolate isochrones on the fly, and [InitialMassFunctions.jl](https://github.com/cgarling/InitialMassFunctions.jl), which provides the initial mass function models.
+
+## Contents
+ - [Installation](#installation): [Julia](#julia), [Projects](#projects), [Package](#package), [Data files](#data-files), [Performance](#performance)
+ - [Examples](#examples)
+ - [Measuring star formation histories: `fit_sfh`](#measuring-star-formation-histories-fit_sfh)
+   - [Fit Parameters](#fit-parameters)
+   - [Total Stellar Mass Formed](#total-stellar-mass-formed)
+   - [Hess Diagrams](#hess-diagrams)
+   - [Plots](#plots)
+ - [Fitting single stellar populations: `fit_ssp`](#fitting-single-stellar-populations-fit_ssp)
+   - [`fit_ssp` outputs](#fit_ssp-outputs)
+   - [`fit_ssp` plots](#fit_ssp-plots)
+ - [Simulating catalogs: `simulate_catalog`](#simulating-catalogs-simulate_catalog)
 
 ## Installation
 
@@ -39,7 +53,7 @@ SFHWorkflows.jl is registered in the Julia General Registry. At the `pkg>` promp
 add SFHWorkflows CairoMakie YAML
 ```
 
-CairoMakie and YAML are not needed to call `fit_sfh` or `simulate_catalog`, but the example scripts use them to make figures and read the configuration files. All of SFHWorkflows.jl's dependencies will be resolved and installed alongside it.
+CairoMakie and YAML are not needed to call `fit_sfh`, `fit_ssp`, or `simulate_catalog`, but the example scripts use them to make figures and read the configuration files. All of SFHWorkflows.jl's dependencies will be resolved and installed alongside it.
 
 Return to the main Julia REPL prompt by hitting backspace when at the root level of the package manager prompt. Type `using SFHWorkflows` at the REPL prompt and it should complete successfully. You are ready to use SFHWorkflows.jl in your project.
 
@@ -63,7 +77,7 @@ The workflows use Julia's multithreading. Julia starts with the number of thread
 Faster linear algebra (BLAS) libraries are available for some systems. On Apple silicon with macOS 13.4 or later, `add AppleAccelerate` and load it with `using AppleAccelerate`; on Intel and AMD processors, the same applies to `MKL`. To load one of these in every Julia session, add the `using` line to `~/.julia/config/startup.jl` (create the file if it does not exist). You can check which BLAS library is in use with `import LinearAlgebra: BLAS; BLAS.get_config()`.
 
 ## Examples
-Runnable examples for both workflows, with configuration files and scripts that make the standard figures, are in [`examples/`](examples). The [`simulate_catalog` example](examples/simulate_catalog) runs without any external data and is a good place to start.
+Runnable examples for each workflow, with configuration files and scripts that make the standard figures, are in [`examples/`](examples). The [`simulate_catalog` example](examples/simulate_catalog) and the [`fit_ssp` example](examples/fit_ssp) run without any external data; the `simulate_catalog` example is a good place to start.
 
 ## Measuring star formation histories: `fit_sfh`
 `fit_sfh` measures the SFH from a catalog of photometry. It reads a YAML configuration file that defines all relevant parameters for the fit; an example with every option documented is given in [`examples/fit_sfh/config.yml`](examples/fit_sfh/config.yml).
@@ -104,6 +118,38 @@ If `plotting.diagnostics: true` in the YAML configuration file, a PDF file `<out
 A convenience function for making a 4-panel Hess diagram (observed Hess, model Hess, observed - model, residual significance) is provided in `SFHWorkflows.SFHFitting.Plotting.plot_cmd_residuals`. An example of its usage is given in `examples/fit_sfh/fit_sfh.jl`.
 
 A convenience function for making a 2-panel cumulative SFH and AMR plot is provided in `SFHWorkflows.SFHFitting.Plotting.plot_cumsfh_sys`. An example of its usage is given in `examples/fit_sfh/fit_sfh.jl`.
+
+## Fitting single stellar populations: `fit_ssp`
+`fit_ssp` fits the color-magnitude diagram of a single stellar population (one age and one metallicity), such as a star cluster, plus a population of background stars. The parameters are the age, metallicity, distance modulus, V-band extinction, binary fraction, and the fraction of observed stars in the background; the stellar mass formed in the population is derived from them. Unlike `fit_sfh`, which fits a fixed grid of templates, `fit_ssp` computes the model Hess diagram for any values of the parameters, finds the best fit by optimization, and samples the posterior with Markov chain Monte Carlo. It reads a YAML configuration file; an example is given in [`examples/fit_ssp/config.yml`](examples/fit_ssp/config.yml), and the [example README](examples/fit_ssp/README.md) describes the fitting method, the prior distributions, and the degeneracies between parameters in more detail.
+
+```julia
+using SFHWorkflows
+results, h = fit_ssp("config.yml") # `h` is the observed Hess diagram as a StatsBase.Histogram
+```
+
+The configuration defines
+ - `data`: the photometry, Hess diagram binning, gates, and observational model, as for `fit_sfh`. The optional `data.background` gives the shape of the background over the Hess diagram from the photometry of a nearby field or a Hess diagram file; without it, the background is uniform.
+ - `stellartracks`, `bolometriccorrections`, `imf`, and `binaries`, as for `fit_sfh`, except that no grid of ages and metallicities is needed and the binary fraction is given in `parameters`.
+ - `parameters`: each of `logAge` (or `age` in Gyr), `MH`, `distance_modulus` (or `distance` in parsecs), `Av`, `binary_fraction`, and `background_fraction` is either a number, which fixes it, or a prior distribution written as in [Distributions.jl](https://juliastats.org/Distributions.jl/stable/univariate/), e.g., `Normal(24.95, 0.1)`, which makes it a free parameter.
+ - `fit` (the starting grid in age and metallicity for the optimization) and `sampling` (the number of walkers and steps of the sampler and the random seed, or `run: false` to stop after the best fit).
+ - `plotting` and `output`.
+
+The fit is run for every combination of stellar track library and bolometric correction grid, in parallel over threads. `results` is a matrix indexed by stellar track library first and bolometric correction grid second, like `result.results` from `fit_sfh`; each entry has fields `model`, `fit` (the best fit), and `chain` (the posterior samples as an `MCMCChains.Chains`, or `nothing` if sampling was not run).
+
+### `fit_ssp` outputs
+`fit_ssp` writes the following files to `<output.path>`, where `<base>` and `<ext>` are the base name and extension of `<output.filename>` and `<tracks>_<bcs>` names a combination of stellar track library and bolometric correction grid (e.g., `PARSEC_YBC`):
+ - `<output.filename>`: a whitespace-delimited summary table with one row per combination. It gives the best fit (`<parameter>_best`, the highest posterior density found by the optimizer or the sampler), its log posterior density (`lp_best`), and the stellar mass formed at the best fit (`mass_best`), followed by the 16th, 50th, and 84th percentiles of the posterior (`<quantity>_lower`, `<quantity>_median`, and `<quantity>_upper`) of each free parameter, the age in Gyr (`age_Gyr`), the stellar mass formed in solar masses (`mass`), and the expected number of background stars (`background_stars`).
+ - `<base>_chain_<tracks>_<bcs><ext>`: the posterior samples, with one row per step of each walker after burn-in, giving the free parameters, `mass`, `background_stars`, and the log posterior density (`lp`).
+ - `<base>_obshess<ext>` and `<base>_modelhess_<tracks>_<bcs><ext>`: the observed and best-fit model Hess diagrams, in the same format as the [`fit_sfh` Hess diagram files](#hess-diagrams).
+ - `input.yml`: a copy of the configuration, including the random seed used for sampling.
+ - `diagnostics.pdf`, if `plotting.diagnostics: true`, as for `fit_sfh`.
+
+### `fit_ssp` plots
+Two plotting functions are provided in `SFHWorkflows.SSPFitting`. Each takes an entry of `results`, saves the figure, and returns the Makie figure and axes for further changes. Their optional `truth` keyword marks known values, e.g., for a simulated cluster.
+ - `plot_ssp_corner(result, output_file; truth=nothing)` makes a corner plot of the posterior samples. It can also be made later from a chain file, with the best fit read from the summary table by `read_best`.
+ - `plot_ssp_cmd(result, color, mag, output_file; truth=nothing)` plots the observed color-magnitude diagram with the best-fit isochrone.
+
+The 4-panel Hess diagram plot of `fit_sfh`, `SFHWorkflows.SFHFitting.Plotting.plot_cmd_residuals`, also accepts a model Hess diagram matrix. Examples of all three are given in [`examples/fit_ssp/fit_ssp.jl`](examples/fit_ssp/fit_ssp.jl).
 
 ## Simulating catalogs: `simulate_catalog`
 `simulate_catalog` samples a mock photometric catalog from a model stellar population with a known SFH. It reads a YAML configuration file; an example with every option documented is given in [`examples/simulate_catalog/config.yml`](examples/simulate_catalog/config.yml). Sections shared with the `fit_sfh` configuration (`imf`, `binaries`, `bolometriccorrections`, `metallicity`, `output`) use the same keys where possible.

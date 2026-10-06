@@ -3,6 +3,7 @@
 Each example is a directory containing a YAML configuration file (`config.yml`) and a script that runs the workflow on it and makes the standard figures.
 
  - [`simulate_catalog/`](simulate_catalog): simulates the photometric catalog of a dwarf irregular galaxy with a known star formation history, fits it with `fit_sfh`, and compares the fit to the input. This example needs no external data, so it is the best place to start.
+ - [`fit_ssp/`](fit_ssp): simulates a star cluster, fits its age, metallicity, distance, extinction, binary fraction, and mass with `fit_ssp`, and compares the fit to the input. This example also needs no external data. Its simulation is configured by `simulate.yml` and its fit by `config.yml`.
  - [`fit_sfh/`](fit_sfh): measures the star formation history of a galaxy from its photometry and artificial star tests. You need to supply your own photometry and artificial star test files.
 
 ## Getting the examples

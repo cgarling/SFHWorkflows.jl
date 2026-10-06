@@ -11,37 +11,10 @@ catalog, truth, fit = simulate_catalog(config)
 # If you'd rather make your own from the output files, you can disregard the code below.
 ###########################################
 using SFHWorkflows.SFHFitting.Parsing: strip_whitespace, parse_gates
+using SFHWorkflows.SFHFitting.Plotting: sparse_mask
 using CairoMakie
 import YAML
 galaxy_name = "Simulated"
-
-# Return a boolean mask indicating which points are in sparsely populated bins.
-function sparse_mask(x, y; bins = 80, threshold = 25)
-    xmin, xmax = extrema(x)
-    ymin, ymax = extrema(y)
-
-    nx = ny = bins
-
-    # Map each point to a rectangular density bin.
-    # Rectangular bins are fine here; they're just being used to decide
-    # which points are worth drawing individually.
-    ix = clamp.(floor.(Int, (x .- xmin) ./ (xmax - xmin) .* nx) .+ 1, 1, nx)
-    iy = clamp.(floor.(Int, (y .- ymin) ./ (ymax - ymin) .* ny) .+ 1, 1, ny)
-
-    counts = zeros(Int, nx, ny)
-
-    @inbounds for i in eachindex(ix)
-        counts[ix[i], iy[i]] += 1
-    end
-
-    keep = BitVector(undef, length(x))
-
-    @inbounds for i in eachindex(keep)
-        keep[i] = counts[ix[i], iy[i]] < threshold
-    end
-
-    return keep
-end
 
 dict = YAML.load_file(config)
 output_path = dict["output"]["path"]

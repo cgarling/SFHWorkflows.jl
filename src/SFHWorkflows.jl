@@ -1,6 +1,6 @@
 module SFHWorkflows
 
-export fit_sfh, simulate_catalog
+export fit_sfh, fit_ssp, simulate_catalog
 
 using StatsBase: Histogram
 using CairoMakie: Makie, set_theme!, theme_latexfonts # CairoMakie re-exports Makie
@@ -29,5 +29,7 @@ include(joinpath("SFH", "SFHFitting.jl"))
 using .SFHFitting
 include("Simulate.jl")
 using .Simulate
+include("SSP.jl")
+using .SSPFitting
 
 end # module

@@ -1,8 +1,9 @@
 """Module containing code to parse input configuration file and construct input for Systematics module."""
 module Parsing
 
-export parse_config
+export parse_config, parse_ssp_config
 
+import Distributions
 import YAML
 using OrderedCollections: OrderedDict
 using InitialMassFunctions
@@ -261,38 +262,12 @@ function check_filter_models(needed, ast_filters, model_filters)
     end
 end
 
-# This function will parse YAML file to dictionary, then call below function
-# that takes input dictionary. This way, if you want, you can load the dict from 
-# file, programmatically update the dict, and pass the altered dict to parse_config
-# to easily run different variations on the same YAML without manually editing it.
-function parse_config(file::AbstractString)
-    @info "Parsing config"
-    if !isfile(file)
-        throw(ArgumentError("Config file $file not found."))
-    end
-
-    config = try
-        YAML.load_file(file; dicttype=OrderedDict{String, Any})
-    catch e
-        println("Failed to parse configuration YAML file $file with error: ")
-        rethrow(e)
-    end
-    return parse_config(config)
-end
-
-function parse_config(config::AbstractDict)
-    output_path = get(config["output"], "path", ".")
-    if !isdir(output_path)
-        try
-            mkdir(output_path)
-        catch e
-            "Requested output_path $output_path does not exist and attempt to create directory failed. Ensure you have write permissions to this path. Full error: "
-            rethrow(e)
-        end
-    end
-    # Save copy of input config to output path
-    YAML.write_file(joinpath(output_path, "input.yml"), config)
-
+"""
+    parse_data(config)
+Parses the `data` section of a fit_sfh or fit_ssp configuration: the photometry and artificial star test files, the
+per-filter observational models, and the Hess diagram binning and gates.
+"""
+function parse_data(config)
     data_path = config["data"]["path"]
     phot_file = joinpath(data_path, config["data"]["photometry"]["photometry_file"])
     filters = parse_to_vector(config["data"]["photometry"]["filters"])
@@ -326,6 +301,42 @@ function parse_config(config::AbstractDict)
     badval = isnothing(asts) ? 99.999 : asts["badval"]
     maxerr = isnothing(asts) ? Inf : get(asts, "maxerr", Inf)::Float64 # If maxerr not provided, use Inf
     minerr = isnothing(asts) ? 0.0 : get(asts, "minerr", 0.0)::Float64
+    return (; phot_file, ast_file, ast_filters, filter_models, filters, badval, maxerr, minerr, ystring, xstrings, xbins, ybins, gates)
+end
+
+# This function will parse YAML file to dictionary, then call below function
+# that takes input dictionary. This way, if you want, you can load the dict from 
+# file, programmatically update the dict, and pass the altered dict to parse_config
+# to easily run different variations on the same YAML without manually editing it.
+function parse_config(file::AbstractString)
+    @info "Parsing config"
+    if !isfile(file)
+        throw(ArgumentError("Config file $file not found."))
+    end
+
+    config = try
+        YAML.load_file(file; dicttype=OrderedDict{String, Any})
+    catch e
+        println("Failed to parse configuration YAML file $file with error: ")
+        rethrow(e)
+    end
+    return parse_config(config)
+end
+
+function parse_config(config::AbstractDict)
+    output_path = get(config["output"], "path", ".")
+    if !isdir(output_path)
+        try
+            mkdir(output_path)
+        catch e
+            "Requested output_path $output_path does not exist and attempt to create directory failed. Ensure you have write permissions to this path. Full error: "
+            rethrow(e)
+        end
+    end
+    # Save copy of input config to output path
+    YAML.write_file(joinpath(output_path, "input.yml"), config)
+
+    data = parse_data(config)
     imf = parse_imf(config)
     binary_model = parse_binaries(config)
     @info "Loading stellar tracks"
@@ -341,7 +352,171 @@ function parse_config(config::AbstractDict)
     logAge = eval(Meta.parse(config["stellartracks"]["logAge"]))
     MH = eval(Meta.parse(config["stellartracks"]["MH"]))
 
-    return (phot_file=phot_file, ast_file=ast_file, ast_filters=ast_filters, filter_models=filter_models, filters=filters, badval=badval, maxerr=maxerr, minerr=minerr, xbins=xbins, ybins=ybins, gates=gates, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0, output_path=output_path, output_filename=config["output"]["filename"], ystring=ystring, xstrings=xstrings, logAge=logAge, MH=MH, T_max=T_max)
+    return (; data..., plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0, output_path=output_path, output_filename=config["output"]["filename"], logAge=logAge, MH=MH, T_max=T_max)
+end
+
+
+#################################
+# fit_ssp configuration
+
+# Distributions allowed in prior strings, e.g., "Normal(24.95, 0.1)" or "truncated(Normal(0.1, 0.05), 0, Inf)"
+const PRIOR_DISTRIBUTIONS = Dict(:Normal => Distributions.Normal, :LogNormal => Distributions.LogNormal,
+                                 :Uniform => Distributions.Uniform, :Beta => Distributions.Beta, :Gamma => Distributions.Gamma,
+                                 :Exponential => Distributions.Exponential, :truncated => Distributions.truncated)
+
+"""
+    parse_prior(x)
+Parses a fit_ssp parameter: a number is a fixed value, returned as a `Float64`, and a string is a prior distribution from
+`PRIOR_DISTRIBUTIONS` with numeric arguments (e.g., `"Normal(24.95, 0.1)"`), built without evaluating arbitrary code.
+"""
+parse_prior(x::Real) = Float64(x)
+function parse_prior(s::AbstractString)
+    invalid() = error("Invalid prior \"$s\": a prior is a number or one of the distributions $(join(sort(string.(keys(PRIOR_DISTRIBUTIONS))), ", ")) with numeric arguments, e.g., \"Normal(24.95, 0.1)\".")
+    function build(ex)
+        ex isa Real && return Float64(ex)
+        ex === :Inf && return Inf
+        if ex isa Expr && ex.head === :call
+            f, args = ex.args[1], ex.args[2:end]
+            f === :- && length(args) == 1 && return -build(args[1])
+            f isa Symbol && haskey(PRIOR_DISTRIBUTIONS, f) && return PRIOR_DISTRIBUTIONS[f](build.(args)...)
+        end
+        invalid()
+    end
+    ex = try Meta.parse(s) catch; invalid() end
+    d = try
+        build(ex)
+    catch e
+        e isa ErrorException && rethrow()
+        error("Invalid prior \"$s\": $(sprint(showerror, e))")
+    end
+    d isa Union{Real, Distributions.ContinuousUnivariateDistribution} || invalid()
+    return d
+end
+
+"""
+    TransformedPrior(base, f, finv, logdxdy)
+Prior on `y = f(x)` given the prior `base` on `x`, for a monotonically increasing `f` with inverse `finv` and
+`logdxdy(y) = log(dx/dy)`. Used for priors on age (Gyr) and distance (pc) when sampling logAge and distance modulus.
+"""
+struct TransformedPrior{D <: Distributions.ContinuousUnivariateDistribution, F, G, J} <: Distributions.ContinuousUnivariateDistribution
+    base::D
+    f::F
+    finv::G
+    logdxdy::J
+end
+function Distributions.logpdf(d::TransformedPrior, y::Real)
+    x = d.finv(y)
+    return Distributions.insupport(d.base, x) ? Distributions.logpdf(d.base, x) + d.logdxdy(y) : oftype(float(y), -Inf)
+end
+Distributions.pdf(d::TransformedPrior, y::Real) = exp(Distributions.logpdf(d, y))
+Distributions.cdf(d::TransformedPrior, y::Real) = Distributions.cdf(d.base, d.finv(y))
+Distributions.quantile(d::TransformedPrior, q::Real) = d.f(Distributions.quantile(d.base, q))
+Distributions.insupport(d::TransformedPrior, y::Real) = Distributions.insupport(d.base, d.finv(y))
+Base.minimum(d::TransformedPrior) = d.f(minimum(d.base))
+Base.maximum(d::TransformedPrior) = d.f(maximum(d.base))
+# Half the 16th to 84th percentile range, as the moments of the transformed variable have no closed form
+Distributions.std(d::TransformedPrior) = (Distributions.quantile(d, 0.8413447460685429) - Distributions.quantile(d, 0.15865525393145707)) / 2
+# Priors on age (Gyr) as logAge = log10(age) + 9, and on distance (pc) as distance modulus = 5 log10(distance) - 5;
+# ages and distances are positive, so priors extending below 0 are truncated there
+positive(d) = minimum(d) < 0 ? Distributions.truncated(d, 0, maximum(d)) : d
+age_prior(d) = TransformedPrior(positive(d), x -> log10(x) + 9, y -> exp10(y - 9), y -> (y - 9) * log(10) + log(log(10)))
+distance_prior(d) = TransformedPrior(positive(d), x -> 5 * log10(x) - 5, y -> exp10((y + 5) / 5), y -> (y + 5) / 5 * log(10) + log(log(10) / 5))
+age_prior(x::Real) = log10(x) + 9
+distance_prior(x::Real) = 5 * log10(x) - 5
+
+# Restricts the parameter `p` (a fixed value or a prior) to [lo, hi]: fixed values outside are an error, and priors are
+# truncated, in the coordinates of `base` for a TransformedPrior so that the truncation is exact
+function restrict(p::Real, lo, hi, name)
+    lo <= p <= hi || error("Invalid configuration: parameters.$name = $p is outside the valid range [$lo, $hi].")
+    return p
+end
+function restrict(p::Distributions.ContinuousUnivariateDistribution, lo, hi, name)
+    minimum(p) >= lo && maximum(p) <= hi && return p
+    @info "Truncating the prior on parameters.$name to the valid range [$lo, $hi]."
+    if p isa TransformedPrior
+        return TransformedPrior(Distributions.truncated(p.base, max(minimum(p.base), p.finv(lo)), min(maximum(p.base), p.finv(hi))), p.f, p.finv, p.logdxdy)
+    end
+    return Distributions.truncated(p, max(minimum(p), lo), min(maximum(p), hi))
+end
+
+"""
+    parse_parameters(dict, binary_model)
+Parses the `parameters` section of a fit_ssp configuration into a `NamedTuple` with a fixed value or prior for each of
+`logAge`, `MH`, `dmod`, `Av`, `binary_fraction`, and `background_fraction`. Age may be given as `logAge` or `age` (Gyr) and
+distance as `distance_modulus` or `distance` (pc).
+"""
+function parse_parameters(dict, binary_model)
+    p = dict["parameters"]
+    function one_of(a, b, fb)
+        haskey(p, a) == haskey(p, b) && error("Invalid configuration: give exactly one of parameters.$a or parameters.$b.")
+        return haskey(p, a) ? parse_prior(p[a]) : fb(parse_prior(p[b]))
+    end
+    required(k) = haskey(p, k) ? parse_prior(p[k]) : error("Invalid configuration: parameters.$k is required.")
+    logAge = one_of("logAge", "age", age_prior)
+    dmod = one_of("distance_modulus", "distance", distance_prior)
+    binary_fraction = if binary_model isa NoBinaries
+        f = parse_prior(get(p, "binary_fraction", 0.0))
+        f isa Real && iszero(f) || error("Invalid configuration: parameters.binary_fraction requires binaries.model RandomBinaryPairs or BinaryMassRatio.")
+        f
+    else
+        haskey(p, "binary_fraction") || error("Invalid configuration: parameters.binary_fraction is required for binaries.model $(nameof(typeof(binary_model))).")
+        restrict(parse_prior(p["binary_fraction"]), 0, 1, "binary_fraction")
+    end
+    background_fraction = restrict(parse_prior(get(p, "background_fraction", "Uniform(0, 1)")), 0, 1, "background_fraction")
+    return (; logAge, MH=required("MH"), dmod, Av=required("Av"), binary_fraction, background_fraction)
+end
+
+# Binary model for fit_ssp, whose fraction is set by parameters.binary_fraction
+function parse_ssp_binaries(dict)
+    b = dict["binaries"]
+    haskey(b, "binary_fraction") && error("Invalid configuration: for fit_ssp, give the binary fraction as parameters.binary_fraction rather than binaries.binary_fraction.")
+    model = strip_whitespace(b["model"])
+    model == "NoBinaries" && return NoBinaries()
+    model == "RandomBinaryPairs" && return RandomBinaryPairs(0.0)
+    model == "BinaryMassRatio" && return BinaryMassRatio(0.0) # ponytail: default Uniform(0.1, 1) mass-ratio distribution only, as in parse_binaries
+    error("Binary model $model unrecognized; valid options are NoBinaries, RandomBinaryPairs, and BinaryMassRatio.")
+end
+
+# Optional background Hess diagram source in `data.background`: a field photometry file with the same filter columns as
+# the photometry, or a Hess diagram file written by write_histogram, and the fraction of the background spread uniformly
+function parse_background(dict)
+    b = get(dict["data"], "background", nothing)
+    isnothing(b) && return (photometry_file=nothing, hess_file=nothing, floor=0.05)
+    haskey(b, "photometry_file") == haskey(b, "hess_file") && error("Invalid configuration: data.background must give exactly one of photometry_file or hess_file.")
+    path(k) = haskey(b, k) ? joinpath(dict["data"]["path"], b[k]) : nothing
+    floor = Float64(get(b, "floor", 0.05))
+    0 <= floor <= 1 || error("Invalid configuration: data.background.floor must be between 0 and 1.")
+    return (photometry_file=path("photometry_file"), hess_file=path("hess_file"), floor)
+end
+
+"""
+    parse_ssp_config(file::AbstractString)
+    parse_ssp_config(config::AbstractDict)
+Parses a fit_ssp configuration file or dictionary into a `NamedTuple` of inputs for `fit_ssp`.
+"""
+function parse_ssp_config(file::AbstractString)
+    @info "Parsing config"
+    isfile(file) || throw(ArgumentError("Config file $file not found."))
+    return parse_ssp_config(YAML.load_file(file; dicttype=OrderedDict{String, Any}))
+end
+function parse_ssp_config(config::AbstractDict)
+    data = parse_data(config)
+    binary_model = parse_ssp_binaries(config)
+    parameters = parse_parameters(config, binary_model)
+    sampling = get(config, "sampling", OrderedDict{String, Any}())
+    nfree = count(v -> !(v isa Real), parameters)
+    nwalkers = Int(get(sampling, "nwalkers", max(16, 4 * nfree)))
+    (iseven(nwalkers) && nwalkers >= nfree + 2) || error("Invalid configuration: sampling.nwalkers must be even and at least the number of free parameters plus 2 ($(nfree + 2)).")
+    fit = get(config, "fit", OrderedDict{String, Any}())
+    @info "Loading stellar tracks"
+    stellar_tracks = parse_tracks(config)
+    @info "Loading bolometric corrections"
+    bcs = parse_bcs(config)
+    return (; data..., background=parse_background(config), imf=parse_imf(config), binary_model, parameters, stellar_tracks, bcs,
+            ngrid=Tuple(Int.(get(fit, "ngrid", [16, 12]))), restarts=Int(get(fit, "restarts", 3)), run_sampling=Bool(get(sampling, "run", true)),
+            nsteps=Int(get(sampling, "nsteps", 3000)), nburnin=Int(get(sampling, "nburnin", 1000)), nwalkers,
+            seed=get(sampling, "seed", nothing), plot_diagnostics=Bool(get(get(config, "plotting", Dict()), "diagnostics", true)),
+            output_path=get(config["output"], "path", "."), output_filename=config["output"]["filename"], config)
 end
 
 end # module

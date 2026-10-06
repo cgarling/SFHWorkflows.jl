@@ -1,0 +1,79 @@
+# Configuration for `fit_ssp`, which fits the color-magnitude diagram of a single stellar population (one age and
+# one metallicity, such as a star cluster). The data, imf, binaries, stellartracks, and bolometriccorrections
+# sections use the same keys as the fit_sfh configuration. See README.md in this directory for more details.
+
+data:
+  path: ./results/simulation # Common path prefix to add to photometry_file and the background files
+  photometry:
+    photometry_file: phot.dat # One column per filter, apparent magnitudes
+    filters: F475W, F814W     # Filter name for each column in photometry_file
+  # Observational models for every filter in binning, from artificial star tests (ASTs) or, as here, per-filter
+  # signal-to-noise ratio curves. Same options as in examples/fit_sfh/config.yml.
+  filters:
+    F475W:
+      mag: [20.5, 25.5, 26.5, 27.5, 28.0, 28.5, 29.0, 29.5]
+      snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97]
+      bias: [0.0, 0.0, 0.0, -0.005, -0.01, -0.02, -0.03, -0.04]
+      minerr: 0.01
+    F814W:
+      mag: [18.9, 23.9, 24.9, 25.9, 26.4, 26.9, 27.4, 27.9]
+      snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97]
+      bias: [0.0, 0.0, 0.0, -0.005, -0.01, -0.02, -0.03, -0.04]
+      minerr: 0.01
+  binning:
+    ybins: range(19.5, 28.0; length=171)
+    xbins: range(-0.75, 2.5; length=75)
+    yfilter: F814W
+    xcolor: F475W, F814W
+    # Optional polygons of [color, magnitude] vertices to exclude from the fit; empty means no gates
+    gates:
+  # Optional. Stars that are not in the cluster (e.g., field stars) are fit with a background. Without this
+  # section the background is uniform over the Hess diagram. To use the Hess diagram of a nearby field instead,
+  # give its photometry (same columns as photometry_file) or a Hess diagram file with the same bins.
+  # background:
+  #   photometry_file: field.dat
+  #   floor: 0.05 # Fraction of the background spread uniformly, for field-star types not in the field sample
+
+imf:
+  model: Kroupa2001
+  mmin: 0.08
+  mmax: 100.0 # The fitted mass is the birth mass between mmin and mmax
+
+binaries:
+  model: BinaryMassRatio # NoBinaries, RandomBinaryPairs, or BinaryMassRatio; the fraction is in `parameters`
+
+stellartracks:
+  track1:
+    name: PARSEC
+
+bolometriccorrections:
+  bc1:
+    name: YBC
+    filterset: acs_wfc
+
+parameters:
+  # A number fixes a parameter; a distribution frees it with that prior (see README.md for the distributions).
+  logAge: Uniform(9.0, 10.13)  # log10(age [yr]); or give `age` in Gyr instead, e.g., age: Uniform(1.0, 13.5)
+  MH: Uniform(-2.0, -0.5)      # [M/H]
+  distance_modulus: Normal(24.95, 0.1) # or give `distance` in pc instead
+  Av: truncated(Normal(0.1, 0.05), 0, Inf) # V-band extinction
+  binary_fraction: Uniform(0, 1)
+  background_fraction: Uniform(0, 0.5) # Fraction of the observed stars in the background
+
+fit:
+  ngrid: [16, 12] # Starting grid in logAge and MH
+  restarts: 3     # Times each optimization may restart while it keeps improving
+
+sampling:
+  run: true    # false stops after finding the best fit
+  nsteps: 1000 # Steps per walker
+  nburnin: 500 # Initial steps per walker that are discarded
+  # nwalkers: 24 # Default is 4 times the number of free parameters, at least 16
+  seed: 1      # Optional; omit for a random seed, which is saved in the output input.yml
+
+plotting:
+  diagnostics: true # Writes diagnostics.pdf showing the completeness used in the fit
+
+output:
+  path: ./results/fit
+  filename: results.txt
