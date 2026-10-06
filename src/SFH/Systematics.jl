@@ -1,7 +1,7 @@
 """Module containing code that will run SFH fitting given prepared inputs."""
 module Systematics
 
-export systematics, mag_select
+export systematics, mag_select, iso_filters
 
 import StarFormationHistories as SFH
 import CSV
@@ -104,6 +104,21 @@ function mag_select(bcgrid::Union{AbstractBCGrid, AbstractBCTable}, ystring::Uni
     return Symbol(original_filters[yidx]), (Symbol(original_filters[xidxs[1]]), Symbol(original_filters[xidxs[2]]))
 end
 
+"""
+    (iso_symb, yidx, xidxs) = iso_filters(bclib, ystring, xstrings)
+Returns the isochrone columns `iso_symb` of `bclib` to use for the y-axis filter `ystring` and the x-axis color
+`xstrings`, with the index `yidx` of the y-axis filter and the indices `xidxs` of the color filters into `iso_symb`.
+The y-axis filter comes first unless it is one of the color filters; observational models must use the same order.
+"""
+function iso_filters(bclib, ystring, xstrings)
+    ysymb, xsymbs = mag_select(bclib, ystring, xstrings)
+    if ysymb in xsymbs
+        return xsymbs, findfirst(==(ysymb), xsymbs), eachindex(xsymbs)
+    else
+        return (ysymb, xsymbs...), 1, [2, 3]
+    end
+end
+
 function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
                    xstrings, ystring,
                    dmod, Av, err_funcs, complete_funcs, bias_funcs, imf,
@@ -111,17 +126,7 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
                    normalize_value::Number=1, binary_model::SFH.AbstractBinaryModel = SFH.NoBinaries(),
                    imf_mean::Number = SFH.mean(imf))
 
-    # Figure out the filters we want to use
-    ysymb, xsymbs = mag_select(bclib, ystring, xstrings)
-    if ysymb in xsymbs
-        iso_symb = xsymbs # All the symbols to pull from the isochrone
-        yidx = findfirst(==(ysymb), iso_symb) # index into iso_symb of y filter
-        xidxs = eachindex(xsymbs) # index into iso_symb of the x filters
-    else
-        iso_symb = (ysymb, xsymbs...)
-        yidx = 1 # index into iso_symb of y filter
-        xidxs = [2, 3] # index into iso_symb of the x filters
-    end
+    iso_symb, yidx, xidxs = iso_filters(bclib, ystring, xstrings)
 
     # Convert unique_MH (defined for the tracklib chemistry) to the bclib chemistry
     unique_bc_MH = convert_MH.(unique_MH, Ref(tracklib), Ref(bclib))

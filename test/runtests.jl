@@ -1,7 +1,12 @@
 using SFHWorkflows
 using SFHWorkflows.SFHFitting.ASTs: snr_model, fill_nan
-using SFHWorkflows.SFHFitting.Parsing: parse_gates, parse_filter_models, check_filter_models, parse_binaries, parse_imf, parse_metallicity
+using SFHWorkflows.SFHFitting.Parsing: parse_gates, parse_filter_models, check_filter_models, parse_binaries, parse_imf, parse_metallicity,
+    parse_prior, age_prior, distance_prior, restrict, parse_parameters, TransformedPrior
+import Distributions
 using SFHWorkflows.Simulate: sfh_mass_fractions
+using SFHWorkflows.SFHFitting.Plotting: sparse_mask
+using SFHWorkflows.SSPFitting: column_format, write_table, read_best
+using TypedTables: Table
 import StarFormationHistories as SFH
 using Test
 
@@ -58,6 +63,61 @@ end
     @test_throws "no observational model for filter F606W" check_filter_models(["F475W", "F606W", "F814W"], ["F475W", "F814W"], String[])
 end
 
+@testset "parse_prior" begin
+    @test parse_prior(24.95) === 24.95
+    @test parse_prior("Normal(24.95, 0.1)") == Distributions.Normal(24.95, 0.1)
+    @test parse_prior("Uniform(-2, -0.5)") == Distributions.Uniform(-2.0, -0.5)
+    d = parse_prior("truncated(Normal(0.1, 0.05), 0, Inf)")
+    @test (minimum(d), maximum(d)) == (0.0, Inf)
+    @test d.untruncated == Distributions.Normal(0.1, 0.05)
+    @test_throws "Invalid prior \"Poisson(3)\"" parse_prior("Poisson(3)")
+    @test_throws "Invalid prior \"run(`ls`)\"" parse_prior("run(`ls`)")
+    @test_throws "Invalid prior \"Normal(1, \"" parse_prior("Normal(1, ")
+    @test_throws "Invalid prior \"Normal(0, -1)\"" parse_prior("Normal(0, -1)")
+end
+
+@testset "TransformedPrior" begin
+    # A Gaussian prior on age in Gyr, as a prior on logAge
+    base = Distributions.Normal(5.0, 0.5)
+    d = age_prior(base)
+    @test d isa TransformedPrior
+    la = 9.7
+    @test Distributions.logpdf(d, la) ≈ Distributions.logpdf(base, exp10(la - 9)) + log(exp10(la - 9) * log(10))
+    grid = range(9.0, 10.2; length=20_001)
+    @test sum(Distributions.pdf.(d, grid)) * step(grid) ≈ 1 rtol=1e-4 # Normalized in logAge
+    @test Distributions.cdf(d, Distributions.quantile(d, 0.3)) ≈ 0.3
+    @test Distributions.quantile(d, 0.5) ≈ log10(5.0) + 9
+    @test age_prior(5.0) ≈ log10(5.0) + 9
+    @test distance_prior(1e6) ≈ 25.0 # 1 Mpc
+    dd = distance_prior(Distributions.Normal(1e6, 5e4))
+    @test Distributions.quantile(dd, 0.5) ≈ 25.0
+    dgrid = range(24.0, 26.0; length=20001)
+    @test sum(Distributions.pdf.(dd, dgrid)) * step(dgrid) ≈ 1 rtol=1e-4 # Normalized in distance modulus
+    # Truncation of a transformed prior is applied to the underlying age distribution
+    t = restrict(d, 9.6, 10.13, "logAge")
+    @test all((minimum(t), maximum(t)) .≈ (9.6, 10.13))
+    @test Distributions.logpdf(t, 9.5) == -Inf
+    @test restrict(Distributions.Uniform(9.0, 10.0), 9.0, 10.13, "logAge") == Distributions.Uniform(9.0, 10.0)
+    @test (minimum(restrict(Distributions.Normal(10.0, 0.3), 9.0, 10.13, "logAge")), maximum(restrict(Distributions.Normal(10.0, 0.3), 9.0, 10.13, "logAge"))) == (9.0, 10.13)
+    @test_throws "outside the valid range" restrict(10.5, 9.0, 10.13, "logAge")
+end
+
+@testset "parse_parameters" begin
+    p = Dict("logAge" => "Uniform(9.0, 10.1)", "MH" => -1.2, "distance_modulus" => "Normal(24.95, 0.1)", "Av" => 0.1, "binary_fraction" => "Uniform(0, 1)")
+    r = parse_parameters(Dict("parameters" => p), SFH.BinaryMassRatio(0.0))
+    @test keys(r) == (:logAge, :MH, :dmod, :Av, :binary_fraction, :background_fraction)
+    @test r.background_fraction == Distributions.Uniform(0.0, 1.0)
+    @test r.MH === -1.2
+    r2 = parse_parameters(Dict("parameters" => merge(Dict(k => v for (k, v) in p if k ∉ ("logAge", "distance_modulus")), Dict("age" => 5.0, "distance" => "Normal(1e6, 5e4)"))), SFH.BinaryMassRatio(0.0))
+    @test r2.logAge ≈ log10(5.0) + 9
+    @test r2.dmod isa TransformedPrior
+    @test_throws "exactly one of parameters.logAge or parameters.age" parse_parameters(Dict("parameters" => merge(p, Dict("age" => 5.0))), SFH.NoBinaries())
+    @test_throws "parameters.MH is required" parse_parameters(Dict("parameters" => Dict(k => v for (k, v) in p if k != "MH")), SFH.BinaryMassRatio(0.0))
+    @test_throws "requires binaries.model" parse_parameters(Dict("parameters" => p), SFH.NoBinaries())
+    @test parse_parameters(Dict("parameters" => Dict(k => v for (k, v) in p if k != "binary_fraction")), SFH.NoBinaries()).binary_fraction == 0
+    @test_throws "parameters.binary_fraction is required" parse_parameters(Dict("parameters" => Dict(k => v for (k, v) in p if k != "binary_fraction")), SFH.RandomBinaryPairs(0.0))
+end
+
 @testset "parse_binaries" begin
     @test parse_binaries(Dict("binaries" => Dict("model" => "NoBinaries"))) isa SFH.NoBinaries
     @test parse_binaries(Dict("binaries" => Dict("model" => "RandomBinaryPairs", "binary_fraction" => 0.4))) == SFH.RandomBinaryPairs(0.4)
@@ -102,4 +162,17 @@ end
     @test_throws "must increase toward the present" sfh_mass_fractions(merge(sfh, Dict("cum_sfh" => [0.4, 1.0])), logAge)
     @test_throws "younger than the youngest" sfh_mass_fractions(merge(sfh, Dict("logAge" => [8.5, 10.0])), logAge)
     @test_throws "must be older than the oldest" sfh_mass_fractions(Dict("T_max" => 5.0, "model" => "constant"), logAge)
+end
+
+@testset "output helpers" begin
+    # 30 points at one spot and 2 isolated points; only the isolated points are in sparse bins
+    x, y = vcat(fill(0.5, 30), 0.0, 1.0), vcat(fill(0.5, 30), 0.0, 1.0)
+    @test sparse_mask(x, y; bins=4, threshold=10) == vcat(falses(30), true, true)
+    @test column_format(:background_fraction) == column_format(:mass) == "%.4e"
+    @test column_format(:logAge) == "%.5f"
+    @test column_format(:walker) == "%d"
+    # The best fit is read back from a summary table as written by fit_ssp
+    f = tempname()
+    write_table(f, Table([(name="A", lp_best=-1.0, logAge_best=9.7, logAge_lower=9.6, mass_best=5e5)]), ["comment"])
+    @test read_best(f, "A") == (logAge=9.7, mass=5e5)
 end

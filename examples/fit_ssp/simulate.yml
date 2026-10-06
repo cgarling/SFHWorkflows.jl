@@ -1,0 +1,61 @@
+# Configuration for `simulate_catalog` that simulates the star cluster fit in this example. A logAge grid and
+# an MH grid with one entry each make a single stellar population. See examples/simulate_catalog/config.yml for
+# every option.
+
+stellartrack:
+  name: PARSEC
+  logAge: "[9.7]" # log10(age [yr]) of the cluster, 5 Gyr
+  MH: "[-1.2]"    # [M/H] of the cluster
+
+bolometriccorrections:
+  bc1:
+    name: YBC
+    filterset: acs_wfc
+    filters: F475W, F814W
+
+imf:
+  model: Kroupa2001
+  mmin: 0.08
+  mmax: 100.0
+
+binaries:
+  model: BinaryMassRatio
+  binary_fraction: 0.3
+
+properties:
+  stellar_mass: 5.0e5     # Birth stellar mass of the cluster [solar masses]
+  distance_modulus: 24.95
+  Av: 0.1
+
+sfh:
+  T_max: 5.5 # Lookback time [Gyr] just older than the cluster, so all of its stars form in the single logAge bin
+  model: constant
+
+metallicity:
+  name: LinearAMR # Constant [M/H] = beta, since alpha = 0
+  alpha: 0.0
+  beta: -1.2
+  std: 0.1 # Has no effect with a single MH grid entry
+
+sampling:
+  seed: 7
+  mag_lim: 30.0
+  mag_lim_filter: F814W
+
+mockobservations:
+  # Per-filter signal-to-noise ratio curves, the same as in examples/simulate_catalog. The fit uses the same models.
+  filters:
+    F475W:
+      mag: [20.5, 25.5, 26.5, 27.5, 28.0, 28.5, 29.0, 29.5]
+      snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97]
+      bias: [0.0, 0.0, 0.0, -0.005, -0.01, -0.02, -0.03, -0.04]
+      minerr: 0.01
+    F814W:
+      mag: [18.9, 23.9, 24.9, 25.9, 26.4, 26.9, 27.4, 27.9]
+      snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97]
+      bias: [0.0, 0.0, 0.0, -0.005, -0.01, -0.02, -0.03, -0.04]
+      minerr: 0.01
+
+output:
+  path: ./results/simulation
+  filename: catalog.txt
