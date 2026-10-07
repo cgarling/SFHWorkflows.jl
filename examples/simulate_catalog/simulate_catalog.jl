@@ -2,7 +2,8 @@
 # The plotting code also requires CairoMakie and YAML in the active environment: `]add CairoMakie YAML`
 using SFHWorkflows
 
-config = "./config.yml"
+# config = "./config.yml"
+config = "./m31_roman.yml"
 # Simulate the catalog. `catalog` and `truth` are tables that are also written to the output path; `fit` is `nothing`
 # unless `fit.run` is true in `config`, in which case it is `(result, h)` as returned by `fit_sfh`
 catalog, truth, fit = simulate_catalog(config)
@@ -18,10 +19,17 @@ galaxy_name = "Simulated"
 
 dict = YAML.load_file(config)
 output_path = dict["output"]["path"]
-# CMD filters and limits come from fit.binning when present; otherwise set them here
-binning = get(get(dict, "fit", Dict()), "binning", nothing)
+# CMD filters and limits come from fit.binning when present. Otherwise the CMD is (first - last) vs. last of the
+# mock-observed filters (the mockobservations section), or of all catalog magnitudes if fewer than two were
+# mock-observed. Filters are taken from the catalog columns, which keep the bolometric correction grids' filter order.
+binning = get(something(get(dict, "fit", nothing), Dict()), "binning", nothing) # A comment-only section loads as nothing
 if isnothing(binning)
-    xcolor, yfilter = ["F475W", "F814W"], "F814W"
+    columns = string.(propertynames(catalog))
+    filters = [chopsuffix(c, "_obs") for c in columns if endswith(c, "_obs")]
+    if length(filters) < 2
+        filters = setdiff(columns, ["m_ini", "m_ini2", "logAge", "MH", "Av"], filter(endswith("_obs"), columns))
+    end
+    xcolor, yfilter = [first(filters), last(filters)], last(filters)
     limits = (nothing, nothing) # Full range of the data
 else
     xcolor, yfilter = split(strip_whitespace(binning["xcolor"]), ","), binning["yfilter"]

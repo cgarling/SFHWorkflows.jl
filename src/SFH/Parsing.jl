@@ -7,7 +7,7 @@ import Distributions
 import YAML
 using OrderedCollections: OrderedDict
 using InitialMassFunctions
-using StarFormationHistories: NoBinaries, RandomBinaryPairs, BinaryMassRatio, MH_from_Z, dMH_dZ, PowerLawMZR, LinearAMR, LogarithmicAMR, GaussianDispersion, snr_magerr
+using StarFormationHistories: NoBinaries, RandomBinaryPairs, BinaryMassRatio, MH_from_Z, dMH_dZ, PowerLawMZR, LinearAMR, LogarithmicAMR, GaussianDispersion, snr_magerr, match_extinction
 using StellarTracks: PARSECLibrary, MISTv1Library, MISTv2Library, BaSTIv1Library, BaSTIv2Library
 using BolometricCorrections: YBCGrid, MISTv1BCGrid, MISTv2BCGrid
 
@@ -58,6 +58,22 @@ function parse_binaries(dict)
         error("Binary model $binary_model unrecognized; valid options are NoBinaries, RandomBinaryPairs, and BinaryMassRatio.")
     end
     return binary_model
+end
+
+"""
+    parse_extinction(dict)
+Returns a function of `logAge` giving the distribution of the V-band extinction of stars of that age under the model of
+MATCH (`StarFormationHistories.match_extinction`): uniform over `[Av, Av + dAv]` plus an independent uniform
+spread up to `dAvy` for young stars, which tapers from full at age `dAvy_t1` to zero at `dAvy_t2` [Gyr]. The function
+returns `nothing` for ages at which every star has extinction `Av`.
+"""
+function parse_extinction(dict)
+    p = dict["properties"]
+    Av, dAv, dAvy = Float64(p["Av"]), Float64(get(p, "dAv", 0.0)), Float64(get(p, "dAvy", 0.0))
+    t1, t2 = 1e9 * Float64(get(p, "dAvy_t1", 0.04)), 1e9 * Float64(get(p, "dAvy_t2", 0.1))
+    (dAv >= 0 && dAvy >= 0) || error("Invalid configuration: properties.dAv and properties.dAvy must be non-negative.")
+    t1 < t2 || error("Invalid configuration: properties.dAvy_t1 must be less than properties.dAvy_t2.")
+    return logAge -> (dAv > 0 || (dAvy > 0 && exp10(logAge) < t2)) ? match_extinction(Av, dAv, dAvy, logAge; t1, t2) : nothing
 end
 
 function parse_tracks(dict)
@@ -353,7 +369,7 @@ function parse_config(config::AbstractDict)
     logAge = eval(Meta.parse(config["stellartracks"]["logAge"]))
     MH = eval(Meta.parse(config["stellartracks"]["MH"]))
 
-    return (; data..., background, plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0, output_path=output_path, output_filename=config["output"]["filename"], logAge=logAge, MH=MH, T_max=T_max)
+    return (; data..., background, extinction=parse_extinction(config), plot_diagnostics=config["plotting"]["diagnostics"], imf=imf, binary_model=binary_model, Av=config["properties"]["Av"], dmod=config["properties"]["distance_modulus"], Mstar=config["properties"]["Mstar"], stellar_tracks=stellar_tracks, bcs=bcs, MH_model0=MH_model0, disp_model0=disp_model0, output_path=output_path, output_filename=config["output"]["filename"], logAge=logAge, MH=MH, T_max=T_max)
 end
 
 

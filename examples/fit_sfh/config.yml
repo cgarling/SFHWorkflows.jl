@@ -110,6 +110,8 @@ bolometriccorrections:
 
 properties:
   Av: 0.13466152995504851 # V-band extinction
+  # dAv: 0.0  # Optional; spread of extinction, uniform from Av to Av + dAv, as MATCH -dAv. Default 0
+  # dAvy: 0.0 # Optional; extra spread for young stars, as MATCH -dAvy (see README). Default 0
   distance_modulus: 24.95
   Mstar: 2.6e6 # Stellar mass to set normalization of initial SFH guess; order-of-magnitude
   T_max: 13.7 # Optional; lookback time [Gyr] when star formation begins (right edge of the oldest logAge bin, and T_max of the AMRs). Default 13.7

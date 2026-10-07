@@ -21,6 +21,9 @@ Edit the `data` section of `config.yml`:
 
 Then update `properties` (distance modulus, extinction, and an approximate stellar mass) for your galaxy, and `bolometriccorrections` for your filter system.
 
+## Differential extinction
+By default every star has extinction `properties.Av`. Set `properties.dAv` to spread the extinction of all stars uniformly from `Av` to `Av + dAv`, as the `-dAv` option of MATCH does, and `properties.dAvy` for an additional, independent uniform spread from 0 to `dAvy` for young stars, as `-dAvy` does (MATCH's default is 0.5). The young-star spread is full for ages below `properties.dAvy_t1` and tapers linearly to zero at `properties.dAvy_t2` (in Gyr; defaults 0.04 and 0.1, as in MATCH). `dAv` and `dAvy` are fixed, not fit; to choose them, compare the best fit over a few values. The templates follow each star along its reddening vector, so the extinctions `Av + dAv + dAvy` must be within the range of every bolometric correction grid. Templates with differential extinction take several times longer to build than those without.
+
 Fitting every combination of stellar track library and bolometric correction grid takes a while. For a quicker first run, comment out all but one entry under `stellartracks` and `bolometriccorrections`.
 
 ## Output

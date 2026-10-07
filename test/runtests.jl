@@ -1,7 +1,7 @@
 using SFHWorkflows
 using SFHWorkflows.SFHFitting.ASTs: snr_model, fill_nan
 using SFHWorkflows.SFHFitting.Parsing: parse_gates, parse_filter_models, check_filter_models, parse_binaries, parse_imf, parse_metallicity,
-    parse_prior, age_prior, distance_prior, restrict, parse_parameters, TransformedPrior, parse_background
+    parse_prior, age_prior, distance_prior, restrict, parse_parameters, TransformedPrior, parse_background, parse_extinction
 import Distributions
 using SFHWorkflows.Simulate: sfh_mass_fractions
 using SFHWorkflows.SFHFitting.Plotting: sparse_mask
@@ -64,6 +64,20 @@ end
     @test_throws "exactly one of photometry_file or hess_file" parse_background(cfg(Dict("floor" => 0.1)))
     @test_throws "must be `none` or a section" parse_background(cfg("flat"))
     @test_throws "floor must be between 0 and 1" parse_background(cfg(Dict("hess_file" => "f.txt", "floor" => 2)))
+end
+
+@testset "parse_extinction" begin
+    cfg(p) = Dict("properties" => merge(Dict{String, Any}("Av" => 0.2), p))
+    @test isnothing(parse_extinction(cfg(Dict()))(7.0))
+    e = parse_extinction(cfg(Dict("dAv" => 0.5, "dAvy" => 0.3)))
+    @test e(9.0) == Distributions.Uniform(0.2, 0.7)
+    @test all(extrema(e(7.0)) .≈ (0.2, 1.0))
+    # dAvy alone spreads extinction only for stars younger than dAvy_t2
+    e = parse_extinction(cfg(Dict("dAvy" => 0.3, "dAvy_t2" => 0.2)))
+    @test isnothing(e(log10(2e8)))
+    @test e(log10(1.5e8)) ≈ Distributions.Uniform(0.2, 0.2 + 0.3 * 0.5 / 1.6)
+    @test_throws "must be non-negative" parse_extinction(cfg(Dict("dAv" => -0.1)))
+    @test_throws "dAvy_t1 must be less" parse_extinction(cfg(Dict("dAvy_t1" => 0.2)))
 end
 
 @testset "check_filter_models" begin
