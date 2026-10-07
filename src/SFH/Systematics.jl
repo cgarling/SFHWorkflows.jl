@@ -6,7 +6,7 @@ export systematics, mag_select, iso_filters
 import StarFormationHistories as SFH
 import CSV
 using TypedTables: Table, columnnames, getproperties
-using BolometricCorrections: chemistry, MH, Z, filternames, AbstractBCGrid, AbstractBCTable, gridname
+using BolometricCorrections: chemistry, MH, Z, filternames, AbstractBCGrid, AbstractBCTable, gridname, Av_nodes
 using StellarTracks: AbstractTrackLibrary, isochrone
 using ArgCheck: @argcheck
 using Printf: @printf, @sprintf, Format, format
@@ -125,7 +125,7 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
                    dmod, Av, err_funcs, complete_funcs, bias_funcs, imf,
                    unique_MH, unique_logAge, edges;
                    normalize_value::Number=1, binary_model::SFH.AbstractBinaryModel = SFH.NoBinaries(),
-                   imf_mean::Number = SFH.mean(imf))
+                   imf_mean::Number = SFH.mean(imf), extinction=Returns(nothing))
 
     iso_symb, yidx, xidxs = iso_filters(bclib, ystring, xstrings)
 
@@ -147,10 +147,20 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
         Threads.@threads for j in eachindex(unique_logAge)
             logage = unique_logAge[j]
             ind = j + ((i-1) * length(unique_logAge)) # index into templates and other buffers for (i,j)
-            iso = isochrone(tracklib, bclib, logage, mh, Av)
-            iso_mags = [getproperty(iso, k) for k in iso_symb]
-            m_ini = iso.m_ini
-            templates[ind] = SFH.partial_cmd_smooth(m_ini, iso_mags, err_funcs, yidx, xidxs, imf, 
+            # `extinction(logage)` is the distribution of extinction, or `nothing` for extinction Av. Magnitudes are
+            # linear in extinction between the nodes of the BC grid, so isochrones are needed only at its ends and the
+            # nodes within it.
+            dist = extinction(logage)
+            knots = isnothing(dist) ? [Av] : let (lo, hi) = extrema(dist)
+                [lo; filter(a -> lo < a < hi, Av_nodes(bclib)); hi]
+            end
+            isos = [isochrone(tracklib, bclib, logage, mh, a) for a in knots]
+            m_ini = first(isos).m_ini
+            @argcheck all(iso.m_ini == m_ini for iso in isos)
+            kmags = [[getproperty(iso, k) for k in iso_symb] for iso in isos]
+            iso_mags = first(kmags)
+            templates[ind] = SFH.partial_cmd_smooth(m_ini, (isnothing(dist) ? (iso_mags,) : (kmags, knots, dist))...,
+                                                    err_funcs, yidx, xidxs, imf,
                                                     complete_funcs, bias_funcs; 
                                                     dmod=dmod, normalize_value=normalize_value, edges=edges, 
                                                     mean_mass=imf_mean, binary_model=binary_model).weights
@@ -237,14 +247,14 @@ function fit_sfh(MH_model0::SFH.AbstractMetallicityModel,
                  unique_MH, unique_logAge, edges; 
                  normalize_value::Number=1, binary_model::SFH.AbstractBinaryModel=SFH.NoBinaries(),
                  imf_mean::Number=SFH.mean(imf), T_max::Number=13.7, mask::AbstractArray{Bool}=falses(length(data)),
-                 background=nothing, background_floor::Number=0.05, kws...)
+                 background=nothing, background_floor::Number=0.05, extinction=Returns(nothing), kws...)
 
     @argcheck mstar > 0
     @argcheck length(mask) == length(data)
     # Construct templates
     all_templates = templates(tracklib, bclib, xstrings, ystring, dmod, Av, err_funcs, complete_funcs, bias_funcs,
                               imf, unique_MH, unique_logAge, edges;
-                              normalize_value=normalize_value, binary_model=binary_model, imf_mean=imf_mean)
+                              normalize_value=normalize_value, binary_model=binary_model, imf_mean=imf_mean, extinction)
     # Bins masked by gates are dropped from both the data and the templates, so they do not enter the likelihood;
     # the full templates are still returned for building model Hess diagrams
     keep = .!vec(mask)

@@ -1,0 +1,94 @@
+# Simulated M31 disk region modeled on the PHAST spatially resolved SFHs of Wainer et al. 2026 (arXiv:2605.12721).
+# Their regions are ~100 pc on a side; the intermediate-density region 835 in their Figure 4 has 1789 stars in the fit
+# and A_V = 0.21, dA_V = 1.3. Here about 2000 stars fall in the fit region. They fit F475W vs. F475W - F814W, excluding
+# stars with F475W - F814W > 1.25 and F475W > 21 to remove the red giant branch and red clump, so the fit is dominated by
+# the upper main sequence and helium burning stars, and constrains the SFH over only the last ~500 Myr.
+# See config.yml for documentation of every option.
+
+stellartrack:
+  name: PARSEC                  # Closest available to the Padova 2006 isochrones used by Wainer et al.
+  logAge: range(6.6, 10.1; step=0.1) # Wainer et al. time bins
+  MH: range(-1.0, 0.4; step=0.1)
+
+bolometriccorrections:
+  bc1:
+    name: YBC
+    filterset: acs_wfc
+    filters: F475W, F814W
+
+imf:
+  model: Kroupa2001
+  mmin: 0.08
+  mmax: 100.0
+
+binaries:
+  model: BinaryMassRatio # Wainer et al. use a binary fraction of 0.35 with uniform secondary masses
+  binary_fraction: 0.35
+
+properties:
+  stellar_mass: 3.44e6 # About 2000 stars in the fit region and ~550 with 21.5 < F814W < 23 (see sfh)
+  distance_modulus: 24.47
+  Av: 0.4
+  dAv: 1.0 # Extinction of each star uniform from Av to Av + dAv, as Wainer et al.
+
+sfh:
+  T_max: 13.7
+  model: cumulative
+  # Relative SFR in each 0.1 dex bin follows the summed PHAT+PHAST SFH (Wainer et al. Figure 8) over the last 500 Myr,
+  # which falls by a factor of ~7 from the 8.6-8.7 bin to 4-5 Myr ago, and the low-density PHAST regions (their
+  # Figure B1) from 500 Myr to 1.25 Gyr, which have about twice the 400-500 Myr SFR at 1-1.25 Gyr. The SFR is constant
+  # at the 1-1.25 Gyr rate from T_max to 1 Gyr, so 80% of the mass formed more than 3.2 Gyr ago. This old population gives
+  # the region ~0.8 star / arcsec^2 with 21.5 < F814W < 23, the stellar density of Wainer et al. regions as deep as this
+  # one (their Figure 1), while contributing few stars to the fit region.
+  logAge: [9.0, 8.9, 8.8, 8.7, 8.6, 8.5, 8.4, 8.3, 8.2, 8.1, 8.0, 7.9, 7.8, 7.7, 7.6, 7.5, 7.4, 7.3, 7.2, 7.1, 7.0, 6.9, 6.8, 6.7, 6.6]
+  cum_sfh: [0.966852, 0.978575, 0.983524, 0.987455, 0.991563, 0.993587, 0.995168, 0.996301, 0.997151, 0.997775, 0.99825, 0.998676, 0.999001, 0.99925, 0.999447, 0.9996, 0.999709, 0.999796, 0.999858, 0.999906, 0.999937, 0.999956, 0.999977, 0.999994, 1.0]
+
+metallicity:
+  name: LinearAMR # Young M31 disk populations are near solar metallicity
+  constraints: [[-0.7, 13.7], [0.0, 0.0]]
+  std: 0.1
+
+sampling:
+  seed: 42
+  mag_lim: 28.5 # Fainter stars are almost never detected
+  mag_lim_filter: F475W
+
+mockobservations:
+  filters:
+    # Depth of the region 835 example: 50% completeness (SNR = 5) near F475W = 27.2 and F814W = 25.9 (Wainer et al.
+    # Figure 1, ~1 star / arcsec^2). Same SNR curve as config.yml, shifted to these limits.
+    F475W:
+      mag: [18.8, 23.8, 24.8, 25.8, 26.3, 26.8, 27.3, 27.8]
+      snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97]
+      bias: [0.0, 0.0, 0.0, -0.005, -0.01, -0.02, -0.03, -0.04]
+      minerr: 0.01
+    F814W:
+      mag: [17.5, 22.5, 23.5, 24.5, 25.0, 25.5, 26.0, 26.5]
+      snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97]
+      bias: [0.0, 0.0, 0.0, -0.005, -0.01, -0.02, -0.03, -0.04]
+      minerr: 0.01
+
+fit:
+  run: true
+  stellar_mass_error: 0.05
+  binning:
+    yfilter: F475W
+    xcolor: F475W, F814W
+    ybins: range(18.0, 27.2; step=0.1) # Faint limit at the F475W 50% completeness, as Wainer et al.
+    xbins: range(-0.5, 3.5; step=0.05)
+    gates: # Wainer et al. exclusion region
+      - [[1.25, 21.0], [3.5, 21.0], [3.5, 27.2], [1.25, 27.2]]
+  # The 2.5 Gyr template puts ~1e-4 as many stars per unit mass into the fit region as the 100 Myr template, and with
+  # it the fit does not converge; the fit instead has one oldest bin from 1.26 Gyr to T_max, like the wide oldest bin
+  # of Wainer et al.
+  stellartracks:
+    track1:
+      name: PARSEC
+    logAge: range(6.6, 9.1; step=0.1)
+    MH: range(-1.0, 0.4; step=0.1)
+  plotting:
+    diagnostics: true
+
+output:
+  path: ./results_m31
+  filename: catalog.txt

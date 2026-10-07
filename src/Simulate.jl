@@ -7,14 +7,14 @@ import StarFormationHistories as SFH
 import CSV
 import YAML
 using ArgCheck: @argcheck
-using BolometricCorrections: filternames
+using BolometricCorrections: filternames, Av_nodes
 using DelimitedFiles: writedlm
 using OrderedCollections: OrderedDict
 using StableRNGs: StableRNG
 using StellarTracks: isochrone
 using TypedTables: Table
 using ..SFHFitting: fit_sfh
-using ..SFHFitting.Parsing: parse_config, parse_imf, parse_binaries, parse_tracks, parse_bcs, parse_metallicity, parse_filter_models, parse_to_vector
+using ..SFHFitting.Parsing: parse_config, parse_imf, parse_binaries, parse_tracks, parse_bcs, parse_metallicity, parse_filter_models, parse_to_vector, parse_extinction
 using ..SFHFitting.ASTs: snr_model, process_ast_file
 using ..SFHFitting.Systematics: mag_select
 
@@ -137,6 +137,14 @@ function simulate_catalog(config::AbstractDict)
     ssp_logAge = repeat(logAge; inner=length(MH_grid))
     ssp_MH = repeat(MH_grid; outer=length(logAge))
     ssp_masses(M) = SFH.calculate_coeffs(MH_model, disp_model, M .* age_fracs, ssp_logAge, ssp_MH)
+    # Distribution of the extinction of each SSP's stars (`nothing` for extinction Av). With differential extinction,
+    # isochrones are evaluated at the extinctions `knots`, between which magnitudes are linear in extinction: Av, the nodes
+    # of the BC grids, and the largest extinction of any SSP. Stars are sampled with magnitudes at every knot, so binary
+    # systems combine the light of their stars at each, and then interpolated to the extinction drawn for each star.
+    ssp_ext = parse_extinction(config).(ssp_logAge)
+    Amax = maximum((last(extrema(d)) for d in ssp_ext if !isnothing(d)); init=Av)
+    knots = Amax > Av ? [Av; filter(a -> Av < a < Amax, sort!(unique!(reduce(vcat, Av_nodes.(bcs))))); Amax] : [Av]
+    knot_names = [n == 1 ? f : string(f, "@A", n) for n in eachindex(knots) for f in mag_names]
 
     mag_lim = Float64(get(sampling, "mag_lim", Inf))
     mag_lim_name = get(sampling, "mag_lim_filter", nothing)
@@ -201,7 +209,8 @@ function simulate_catalog(config::AbstractDict)
         end
         fitcfg = OrderedDict{String, Any}("data" => data, "imf" => config["imf"], "binaries" => config["binaries"],
                                           "stellartracks" => tracks, "bolometriccorrections" => fit_bcs,
-                                          "properties" => OrderedDict{String, Any}("Av" => Av, "distance_modulus" => dmod, "T_max" => T_max),
+                                          "properties" => OrderedDict{String, Any}("Av" => Av, (k => props[k] for k in ("dAv", "dAvy", "dAvy_t1", "dAvy_t2") if haskey(props, k))...,
+                                                                                   "distance_modulus" => dmod, "T_max" => T_max),
                                           "metallicity" => metallicity, "plotting" => OrderedDict{String, Any}("diagnostics" => true),
                                           "output" => OrderedDict{String, Any}("path" => fitdir, "filename" => "results" * splitext(config["output"]["filename"])[2]))
         # Any fit_sfh section given under `fit` replaces the generated default
@@ -235,10 +244,11 @@ function simulate_catalog(config::AbstractDict)
     # Isochrones of the SSPs to sample; SSPs below min_ssp_mass are skipped because sampling draws at least one star per SSP
     # Names local to these closures must not match locals of simulate_catalog, which closures would capture and share
     function ssp_isochrone(k)
-        grids = [isochrone(tracklib, bc, ssp_logAge[k], ssp_MH[k], Av) for bc in bcs]
+        grids = [isochrone(tracklib, bc, ssp_logAge[k], ssp_MH[k], a) for a in knots for bc in bcs]
         m_ini = collect(Float64, first(grids).m_ini)
-        all(g -> g.m_ini == m_ini, grids) || error("Isochrones from different bolometric correction grids have different initial masses.")
-        return m_ini, [collect(Float64, getproperty(g, Symbol(f))) for (g, fs) in zip(grids, bcfilters) for f in fs]
+        all(g -> g.m_ini == m_ini, grids) || error("Isochrones from different bolometric correction grids or extinctions have different initial masses.")
+        # Magnitudes in the order of knot_names: every output filter at the first knot, then at the second, and so on
+        return m_ini, [collect(Float64, getproperty(g, Symbol(f))) for (g, fs) in zip(grids, Iterators.cycle(bcfilters)) for f in fs]
     end
     function ssp_isochrones(idxs)
         out = Vector{Tuple{Vector{Float64}, Vector{Vector{Float64}}}}(undef, length(idxs))
@@ -258,6 +268,8 @@ function simulate_catalog(config::AbstractDict)
         # masses depend on the total mass, so iterate to a fixed point (the AMRs converge in one step)
         candidates = findall(>(0), repeat(age_fracs; inner=length(MH_grid)))
         isos = ssp_isochrones(candidates)
+        # The luminosity is taken at the first knot, so with differential extinction absolute_magnitude is that of the
+        # population with extinction Av
         j = findfirst(==(absmag_name), mag_names)
         lpm = [SFH.luminosity_per_mass(m_ini, mags, imf)[j] for (m_ini, mags) in isos]
         L = SFH.mag2flux(Float64(props["absolute_magnitude"]))
@@ -277,18 +289,33 @@ function simulate_catalog(config::AbstractDict)
     @info "Sampling stars"
     kws = isfinite(mag_lim) ? (; mag_lim, mag_lim_name) : (;)
     massvec, magvec = if haskey(props, "stellar_mass")
-        SFH.generate_stars_mass_composite(first.(isos), last.(isos), mag_names, sum(masses[kept]), masses[kept], imf; binary_model, rng, dist_mod=dmod, kws...)
+        SFH.generate_stars_mass_composite(first.(isos), last.(isos), knot_names, sum(masses[kept]), masses[kept], imf; binary_model, rng, dist_mod=dmod, kws...)
     else
-        SFH.generate_stars_mag_composite(first.(isos), last.(isos), mag_names, Float64(props["absolute_magnitude"]), absmag_name, masses[kept], imf; frac_type=:mass, binary_model, rng, dist_mod=dmod, kws...)
+        SFH.generate_stars_mag_composite(first.(isos), last.(isos), knot_names, Float64(props["absolute_magnitude"]), absmag_name, masses[kept], imf; frac_type=:mass, binary_model, rng, dist_mod=dmod, kws...)
     end
     systems = reduce(vcat, massvec)
-    allmags = reduce(vcat, magvec)
-    nstars = length.(massvec)
+    ssp_idx = reduce(vcat, fill.(kept, length.(massvec)))
+    # Each system's extinction, drawn from the distribution of its SSP, and its magnitudes at that extinction
+    nf = length(mag_names)
+    star_Av = [isnothing(ssp_ext[k]) ? Av : rand(rng, ssp_ext[k]) for k in ssp_idx]
+    allmags = map(reduce(vcat, magvec), star_Av) do mk, a
+        length(knots) == 1 && return mk
+        ia = clamp(searchsortedlast(knots, a), 1, length(knots) - 1)
+        ta = (a - knots[ia]) / (knots[ia+1] - knots[ia])
+        [mk[(ia-1)*nf+j] + ta * (mk[ia*nf+j] - mk[(ia-1)*nf+j]) for j in 1:nf]
+    end
+    # Sampling applied mag_lim at the least extinction; extinction makes some of those stars fainter than it
+    if isfinite(mag_lim)
+        jlim = findfirst(==(mag_lim_name), mag_names)
+        bright = [m[jlim] < mag_lim for m in allmags]
+        systems, ssp_idx, star_Av, allmags = systems[bright], ssp_idx[bright], star_Av[bright], allmags[bright]
+    end
     cols = OrderedDict{Symbol, Vector{Float64}}(
         :m_ini => first.(systems),
         :m_ini2 => [length(s) > 1 ? s[2] : 0.0 for s in systems], # 0 for single stars
-        :logAge => reduce(vcat, fill.(ssp_logAge[kept], nstars)),
-        :MH => reduce(vcat, fill.(ssp_MH[kept], nstars)))
+        :logAge => ssp_logAge[ssp_idx],
+        :MH => ssp_MH[ssp_idx])
+    length(knots) > 1 && (cols[:Av] = star_Av)
     for (j, f) in enumerate(mag_names)
         cols[Symbol(f)] = getindex.(allmags, j)
     end

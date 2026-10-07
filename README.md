@@ -92,7 +92,7 @@ result, h = fit_sfh("config.yml") # `h` is the observed Hess diagram as a StatsB
 The configuration defines
  - `data`: the photometry file, the Hess diagram binning, and the observational model for each filter used in the fit. Optional polygons in color and magnitude (`data.binning.gates`) exclude regions of the Hess diagram, such as those with foreground contamination, from the fit. The optional `data.background` sets the shape of the [background](#background) fit alongside the stellar populations. The observational model (photometric error, bias, and completeness) is measured either from artificial star tests (`data.ASTs`) or from a tabulated signal-to-noise ratio or magnitude error curve for each filter (`data.filters`).
  - `stellartracks` and `bolometriccorrections`: the stellar track libraries and bolometric correction grids, and the grid of ages and metallicities the SFH is measured on. The SFH is measured once for every combination of stellar track library and bolometric correction grid, and the spread between these results is reported as a systematic uncertainty.
- - `imf`, `binaries`, `properties` (distance, extinction, and an approximate stellar mass), and `metallicity` (the age-metallicity or mass-metallicity relation, with initial guesses for its parameters).
+ - `imf`, `binaries`, `properties` (distance, extinction, approximate stellar mass, and optionally an age-dependent differential extinction among stars; see `examples/fit_sfh/README.md`), and `metallicity` (the age-metallicity or mass-metallicity relation, with initial guesses for its parameters).
  - `plotting` and `output`.
 
 In this documentation, placeholders like `<output.path>` indicate the value given under the `output` section in the `path` variable of the YAML configuration file. All text files written will use the same file extension as provided in `<output.filename>` for consistency.
@@ -171,14 +171,14 @@ catalog, truth, fit = simulate_catalog("config.yml")
 
 The configuration defines
  - `stellartrack` and `bolometriccorrections`: one stellar track library, the grid of ages and metallicities used to discretize the SFH, and the bolometric correction grids. The catalog contains magnitudes in every filter of every listed bolometric correction grid (or a selected subset).
- - `properties`: the total birth stellar mass (or, alternatively, the integrated absolute magnitude in one filter), the distance, and the extinction.
+ - `properties`: the total birth stellar mass (or, alternatively, the integrated absolute magnitude in one filter), the distance, and the extinction, optionally with a spread among stars (`dAv`, `dAvy`) as for `fit_sfh`; each star's extinction is then drawn from the distribution for its age. With an extinction spread, `absolute_magnitude` is the integrated magnitude of the population at extinction `Av`, before the spread is applied, so the catalog is fainter than `absolute_magnitude`.
  - `sfh` and `metallicity`: the input SFH, either a constant star formation rate or a tabulated cumulative SFH, and the age-metallicity or mass-metallicity relation.
  - `imf`, `binaries`, and `sampling` (random seed and an optional magnitude limit).
  - `mockobservations` (optional): observational models, from artificial star tests or tabulated signal-to-noise ratio curves, used to add photometric errors and bias and to draw which stars are detected.
  - `fit` (optional): settings for fitting the simulated catalog with `fit_sfh`.
 
 `simulate_catalog` writes the following files to `<output.path>`:
- - `<output.filename>`: the catalog. Each row is one star or unresolved binary system that is still alive (and brighter than the magnitude limit, if one is given), with its initial mass(es), age, metallicity, and true apparent magnitudes. Mock-observed filters have an extra `<filter>_obs` column with the observed magnitude, or `NaN` if the star was not detected.
+ - `<output.filename>`: the catalog. Each row is one star or unresolved binary system that is still alive (and brighter than the magnitude limit, if one is given), with its initial mass(es), age, metallicity, V-band extinction (column `Av`, only if `dAv` or `dAvy` were provided), and true apparent magnitudes. Mock-observed filters have an extra `<filter>_obs` column with the observed magnitude, or `NaN` if the star was not detected.
  - `<base>_truth<ext>`, where `<base>` and `<ext>` are the base name and extension of `<output.filename>`: the input SFH binned on the age grid, with the same columns as the `fit_sfh` results (`sfr`, `cum_sfh`, `MH`) so the two can be compared directly.
  - `input.yml`: a copy of the configuration, including the random seed, so that the catalog can be regenerated exactly.
  - `fit/` (if `fit.run: true`): the generated `fit_sfh` configuration (`input.yml`), the photometry of the detected stars (`phot.dat`), and all `fit_sfh` outputs. The generated configuration can be edited and rerun with `fit_sfh` directly.

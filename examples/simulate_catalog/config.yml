@@ -40,12 +40,15 @@ binaries:
 properties:
   stellar_mass: 2.0e6     # Total birth stellar mass to sample [solar masses]
   # Alternative to stellar_mass: integrated absolute magnitude in one output filter. Give exactly one
-  # of stellar_mass or absolute_magnitude.
+  # of stellar_mass or absolute_magnitude. With dAv or dAvy, absolute_magnitude is for the population at extinction
+  # Av, before the spread is applied.
   # absolute_magnitude: -9.0
   # absolute_magnitude_filter: F606W
   distance_modulus: 24.95 # Give exactly one of distance_modulus or distance
   # distance: 977e3       # Distance [pc]
   Av: 0.13466152995504851 # V-band extinction
+  # dAv: 0.0  # Optional; spread of extinction, uniform from Av to Av + dAv, as MATCH -dAv. Default 0
+  # dAvy: 0.0 # Optional; extra spread for young stars, as MATCH -dAvy (see examples/fit_sfh/README.md). Default 0
 
 sfh:
   T_max: 13.7 # Lookback time [Gyr] at which star formation begins; cum_sfh=0 here by definition
