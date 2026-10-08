@@ -78,6 +78,11 @@ fit:
     xbins: range(-0.5, 3.5; step=0.05)
     gates: # Wainer et al. exclusion region
       - [[1.25, 21.0], [3.5, 21.0], [3.5, 27.2], [1.25, 27.2]]
+  # Start the fit from a perturbed age-metallicity relation rather than the true one
+  metallicity:
+    name: LinearAMR
+    constraints: [[-0.5, 13.7], [-0.2, 0.0]] # Truth: [[-0.7, 13.7], [0.0, 0.0]]
+    std: 0.1
   # The 2.5 Gyr template puts ~1e-4 as many stars per unit mass into the fit region as the 100 Myr template, and with
   # it the fit does not converge; the fit instead has one oldest bin from 1.26 Gyr to T_max, like the wide oldest bin
   # of Wainer et al.
