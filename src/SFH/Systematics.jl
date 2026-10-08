@@ -306,7 +306,7 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
         background_stars = Array{Float64}(undef, n, m, 3) # Expected number of background stars
         model_hess = Matrix{Matrix{Float64}}(undef, n, m)  # Best-fit model Hess diagrams, including the background
         status = Matrix{Any}(undef, n, m)                  # Convergence of each fit (fit_status)
-        # present_masses = Matrix{Float64}(undef, nsolutions, 3)
+        present_masses = Array{Float64}(undef, n, m, 3)
         tables = Matrix{Table}(undef, n, m)
 
         @info "Entering threaded SFH loop"
@@ -341,7 +341,9 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                 #     showerror(stderr, e)
                 # end
                 quantile_results_map[2] .*= normalize_value # Correct SFR normalization
-                quantile_results = SFH.cum_sfr_quantiles(fit_result[1], fit_result.logAge, fit_result.MH, T_max, 10_000, (0.16, 0.5, 0.84))
+                # Fraction of the birth mass of each template in stars that are still alive, for the present-day mass
+                surviving = [SFH.surviving_mass_fraction(maximum(m_ini), imf, binary_model; mean_mass=imf_mean) for m_ini in fit_result.mini]
+                quantile_results = SFH.cum_sfr_quantiles(fit_result[1], fit_result.logAge, fit_result.MH, T_max, 10_000, (0.16, 0.5, 0.84); surviving_fractions=surviving)
                 # quantile_results = try
                 #     SFH.cum_sfr_quantiles(fit_result[1], fit_result.logAge, fit_result.MH, T_max, 10_000, (0.16, 0.5, 0.84))
                 # catch e
@@ -360,8 +362,10 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                     end
                 end
 
-                # Write birth masses into output array
-                birth_masses[i, j, :] .= (SFH.integrate_sfr(logAge_l, logAge_u, quantile_results[2][:, ii]) for ii in 1:3)
+                # Quantiles of the total birth and present-day masses of the sampled SFHs, which account for the
+                # correlations between time bins (unlike sums of the per-bin SFR quantiles)
+                birth_masses[i, j, :] .= quantile_results.mstar .* normalize_value
+                present_masses[i, j, :] .= quantile_results.mstar_present .* normalize_value
                 # The background is the last fitted parameter. Its quantiles come from the MAP samples, which give a useful
                 # upper limit when the MLE background is ~0 (as for the SFRs above)
                 bsamples = view(quantile_results_map.samples, lastindex(quantile_results_map.samples, 1), :)
@@ -392,7 +396,9 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
         end
         @info "SFH fits complete; measuring statistics"
         masstable = Table(name = vec([gridname(i) * "_" * gridname(j) for i=tracklibs, j=bclibs]),
-                        mstar_lower = vec(birth_masses[:,:,1]), mstar = vec(birth_masses[:,:,2]), mstar_upper = vec(birth_masses[:,:,3]))
+                        mstar_lower = vec(birth_masses[:,:,1]), mstar = vec(birth_masses[:,:,2]), mstar_upper = vec(birth_masses[:,:,3]),
+                        mstar_present_lower = vec(present_masses[:,:,1]), mstar_present = vec(present_masses[:,:,2]),
+                        mstar_present_upper = vec(present_masses[:,:,3]))
         if !isnothing(background)
             masstable = Table(masstable; background_stars_lower = vec(background_stars[:,:,1]), background_stars = vec(background_stars[:,:,2]),
                               background_stars_upper = vec(background_stars[:,:,3]))
