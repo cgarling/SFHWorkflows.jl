@@ -2,8 +2,7 @@
 # The plotting code also requires CairoMakie and YAML in the active environment: `]add CairoMakie YAML`
 using SFHWorkflows
 
-# config = "./config.yml"
-config = "./m31_roman.yml"
+config = "./config.yml"
 # Simulate the catalog. `catalog` and `truth` are tables that are also written to the output path; `fit` is `nothing`
 # unless `fit.run` is true in `config`, in which case it is `(result, h)` as returned by `fit_sfh`
 catalog, truth, fit = simulate_catalog(config)

@@ -80,6 +80,11 @@ fit:
     # [M/H] grid and its recent SFR is ~30% high.
     gates:
     #   - [[1.0, 20.0], [3.5, 20.0], [3.5, 27.2], [1.0, 27.2]]
+  # Start the fit from a perturbed age-metallicity relation rather than the true one
+  metallicity:
+    name: LinearAMR
+    constraints: [[-0.5, 13.7], [-0.2, 0.0]] # Truth: [[-0.7, 13.7], [0.0, 0.0]]
+    std: 0.1
   plotting:
     diagnostics: true
 
