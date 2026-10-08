@@ -217,8 +217,13 @@ function write_masstable(fname::AbstractString, table)
 end
 write_masstable(::Nothing, ::Any) = nothing
 
-# Convergence of one optimization from its Optim.jl result
-optim_status(r) = (converged = Optim.converged(r), termination = string(Optim.termination_code(r)), iterations = Optim.iterations(r),
+# Convergence of one optimization from its Optim.jl result. With its default zero tolerances, Optim.jl also reports a
+# stall (no change in the parameters or the objective) as converged, whatever the gradient, so the largest gradient
+# component must also be below 1. The components are changes in log likelihood per unit of the fitted parameters, mostly
+# log stellar masses. The curvature in a log mass is about the number of stars n in its templates, so a residual
+# gradient g leaves it g / n from the optimum, a fraction g / sqrt(n) of its uncertainty; the criterion becomes less
+# strict relative to the uncertainties as datasets grow. Converged stalls typically end with gradients below 1e-3.
+optim_status(r) = (converged = Optim.converged(r) && Optim.g_residual(r) < 1, termination = string(Optim.termination_code(r)), iterations = Optim.iterations(r),
                    f_calls = Optim.f_calls(r), g_residual = Float64(Optim.g_residual(r)))
 # One row of the convergence table for the fit of one stellar track library and BC grid: the status of its MAP and MLE
 # optimizations, its log likelihood at the MLE, and the time taken to build its templates and fit them
@@ -314,9 +319,9 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
                                     complete_funcs, bias_funcs, imf, unique_MH, unique_logAge, edges; normalize_value=normalize_value,
                                     binary_model=binary_model, imf_mean=imf_mean, T_max=T_max, background, kws...)
                 s = status[i,j] = fit_status(gridname(tracklib) * "_" * gridname(bclib), fit_result[1], t)
-                for (stage, conv, term, iter) in (("MAP", s.map_converged, s.map_termination, s.map_iterations),
-                                                  ("MLE", s.mle_converged, s.mle_termination, s.mle_iterations))
-                    conv || @warn "The $stage optimization of the $(s.name) fit did not converge: stopped by $term after $iter iterations."
+                for (stage, conv, term, iter, g) in (("MAP", s.map_converged, s.map_termination, s.map_iterations, s.map_g_residual),
+                                                     ("MLE", s.mle_converged, s.mle_termination, s.mle_iterations, s.mle_g_residual))
+                    conv || @warn "The $stage optimization of the $(s.name) fit did not converge: stopped by $term after $iter iterations with largest gradient component $(@sprintf("%.3g", g))."
                 end
                 results[i,j] = fit_result[1]
                 templates[i,j] = fit_result.templates

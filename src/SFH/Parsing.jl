@@ -341,14 +341,7 @@ end
 
 function parse_config(config::AbstractDict)
     output_path = get(config["output"], "path", ".")
-    if !isdir(output_path)
-        try
-            mkdir(output_path)
-        catch e
-            "Requested output_path $output_path does not exist and attempt to create directory failed. Ensure you have write permissions to this path. Full error: "
-            rethrow(e)
-        end
-    end
+    mkpath(output_path)
     # Save copy of input config to output path
     YAML.write_file(joinpath(output_path, "input.yml"), config)
 
