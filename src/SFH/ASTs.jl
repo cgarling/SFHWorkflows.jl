@@ -7,8 +7,7 @@ import StarFormationHistories as SFH
 # import CSV
 using ArgCheck: @argcheck, @check
 using DelimitedFiles: readdlm
-using DataInterpolations: CubicSpline, LinearInterpolation, ExtrapolationType, ExtrapolationType.Constant
-using Interpolations: interpolate, extrapolate, Gridded, Linear, Flat
+using Interpolations: interpolate, extrapolate, Gridded, Linear, Flat, Line
 using SpecialFunctions: erf
 using Logging: ConsoleLogger, with_logger, Error
 using StatsBase: fit, Histogram
@@ -19,6 +18,9 @@ using PlotUtils: zscale
 using TypedTables: Table
 # using DataFrames: DataFrame
 
+# Per-filter (1-D) completeness, bias, and error of ASTs in bins of input magnitude `mag`, for the diagnostic plots; bins
+# without detected artificial stars are dropped, and `err` stops before the first bin, after the minimum error, at or
+# above `maxerr`, so it covers only `mag[eachindex(err)]`
 function process_asts(input, output, badval::Number, minerr::Number, maxerr::Number)
     ast_table = Table(input = input, output = output)
     ast_bin_edges = range(round(minimum(input), RoundUp; digits=1),
@@ -43,20 +45,17 @@ function process_asts(input, output, badval::Number, minerr::Number, maxerr::Num
             break
         end
     end
-    complete_itp = CubicSpline(r[2], r[1]; extrapolation=Constant)
-    bias_itp = CubicSpline(r[3], r[1]; extrapolation=Constant)
-    err_itp = CubicSpline(max.(minerr, r[4][begin:trunc_idx]), r[1][begin:trunc_idx]; extrapolation=Constant)
-    return (complete_itp, bias_itp, err_itp)
+    return (mag=r[1], completeness=r[2], bias=r[3], err=max.(minerr, r[4][begin:trunc_idx]))
 end
 
-function plot_ast_residual(input, output, itps, mag_label, err_range, badval::Number)
+function plot_ast_residual(input, output, r, mag_label, err_range, badval::Number)
         # Plot residuals, bias
         f = Figure()
         ax = Axis(f[1, 1], xlabel="Magnitude", ylabel=L"$\langle$ Output - Input $\rangle$", title=mag_label * " residuals")
 
         good = findall(!≈(badval), output)
         h = fit(Histogram, (input[good], output[good] .- input[good]),
-                (range(first(itps[1].t), last(itps[1].t); length=100),
+                (range(first(r.mag), last(r.mag); length=100),
                  range(err_range...; length=100)))
         # Colorscale is now in Makie, see PR https://github.com/MakieOrg/Makie.jl/pull/5166
         # Added in version 0.24.5
@@ -68,9 +67,9 @@ function plot_ast_residual(input, output, itps, mag_label, err_range, badval::Nu
                      colorscale = transform)
         hlines!(ax, [0], color=:black)
         # Overplot bias
-        # scatter!(ax, itps[2].t, itps[2].u, color=:red)
-        errorbars!(ax, itps[2].t, itps[2].u, itps[3].(itps[2].t); color=:red)
-        lines!(ax, itps[2].t, itps[2].(itps[2].t), color=:red, linestyle=:solid)
+        # Bins past the end of `r.err` use its last value
+        errorbars!(ax, r.mag, r.bias, r.err[min.(eachindex(r.mag), lastindex(r.err))]; color=:red)
+        lines!(ax, r.mag, r.bias, color=:red, linestyle=:solid)
         xlims!(ax, extrema(h.edges[1])...)
         ylims!(ax, extrema(h.edges[2])...)
         return f
@@ -141,11 +140,11 @@ function process_ast_file(astfile::AbstractString, filters, badval::Number, mine
         f = Figure()
         ax = Axis(f[1, 1], xlabel="Magnitude", ylabel="Completeness")
         # Plot mag1
-        scatter!(ax, r1[1].t, r1[1].u, color=:black, label=filters[1])
-        lines!(ax, r1[1].t, r1[1].(r1[1].t), color=:black, linestyle=:dash, label=filters[1])
+        scatter!(ax, r1.mag, r1.completeness, color=:black, label=filters[1])
+        lines!(ax, r1.mag, r1.completeness, color=:black, linestyle=:dash, label=filters[1])
         # Plot mag2
-        scatter!(ax, r2[1].t, r2[1].u, color=:red, label=filters[2])
-        lines!(ax, r2[1].t, r2[1].(r2[1].t), color=:red, linestyle=:dash, label=filters[2])
+        scatter!(ax, r2.mag, r2.completeness, color=:red, label=filters[2])
+        lines!(ax, r2.mag, r2.completeness, color=:red, linestyle=:dash, label=filters[2])
         axislegend(ax, merge=true, unique=true)
         # display(f)
         save(joinpath(output_path, "completeness.pdf"), f)
@@ -155,11 +154,11 @@ function process_ast_file(astfile::AbstractString, filters, badval::Number, mine
         # ax = Axis(f[1, 1], xlabel="Magnitude", ylabel=L"Bias $\langle m_\text{out} - m_\text{in} \rangle$")
         # ylims!(ax, -0.1, 0.1)
         # # Plot mag1
-        # scatter!(ax, r1[2].t, r1[2].u, color=:black, label=filters[1])
-        # lines!(ax, r1[2].t, r1[2].(r1[2].t), color=:black, linestyle=:dash, label=filters[1])
+        # scatter!(ax, r1.mag, r1.bias, color=:black, label=filters[1])
+        # lines!(ax, r1.mag, r1.bias, color=:black, linestyle=:dash, label=filters[1])
         # # Plot mag2
-        # scatter!(ax, r2[2].t, r2[2].u, color=:red, label=filters[2])
-        # lines!(ax, r2[2].t, r2[2].(r2[2].t), color=:red, linestyle=:dash, label=filters[2])
+        # scatter!(ax, r2.mag, r2.bias, color=:red, label=filters[2])
+        # lines!(ax, r2.mag, r2.bias, color=:red, linestyle=:dash, label=filters[2])
         # axislegend(ax, merge=true, unique=true)
         # display(f)
         # save("bias.pdf", f)
@@ -168,12 +167,12 @@ function process_ast_file(astfile::AbstractString, filters, badval::Number, mine
         f = Figure()
         ax = Axis(f[1, 1], xlabel="Magnitude", ylabel="Median Photometric Error")
         # Plot mag1
-        scatter!(ax, r1[3].t, r1[3].u, color=:black, label=filters[1])
-        lines!(ax, r1[3].t, r1[3].(r1[3].t), color=:black, linestyle=:dash, label=filters[1])
+        scatter!(ax, r1.mag[eachindex(r1.err)], r1.err, color=:black, label=filters[1])
+        lines!(ax, r1.mag[eachindex(r1.err)], r1.err, color=:black, linestyle=:dash, label=filters[1])
         # Plot mag2
-        scatter!(ax, r2[3].t, r2[3].u, color=:red, label=filters[2])
-        lines!(ax, r2[3].t, r2[3].(r2[3].t), color=:red, linestyle=:dash, label=filters[2])
-        ylims!(0.0, 1.5 * (isfinite(maxerr) ? maxerr : maximum(vcat(r1[3].u, r2[3].u))))
+        scatter!(ax, r2.mag[eachindex(r2.err)], r2.err, color=:red, label=filters[2])
+        lines!(ax, r2.mag[eachindex(r2.err)], r2.err, color=:red, linestyle=:dash, label=filters[2])
+        ylims!(0.0, 1.5 * (isfinite(maxerr) ? maxerr : maximum(vcat(r1.err, r2.err))))
         axislegend(ax, merge=true, unique=true, position=:lt)
         # display(f)
         save(joinpath(output_path, "error.pdf"), f)
@@ -199,12 +198,12 @@ function snr_model(mag, snr; bias=nothing, minerr::Number=0, snr50::Number=5, wi
     # Linear extrapolation past the faint end must keep SNR falling, or completeness would rise again
     @argcheck issorted(snr[p]; rev=true) "Tabulated SNR must not increase toward fainter magnitudes."
     @argcheck snr[p[end]] < snr[p[end-1]] "Tabulated SNR must decrease between the two faintest magnitudes."
-    logsnr = LinearInterpolation(log10.(snr[p]), mag[p]; extrapolation=ExtrapolationType.Linear)
+    logsnr = extrapolate(interpolate((mag[p],), log10.(snr[p]), Gridded(Linear())), Line())
     completeness(m) = (1 + erf((exp10(logsnr(m)) - snr50) / (sqrt(2) * width))) / 2
     # Errors extrapolated with the SNR would grow without bound (hundreds of mag for stars far below the detection
     # limit), making their template kernels cover the whole Hess diagram
     err(m) = max(minerr, SFH.magerr_snr(exp10(logsnr(clamp(m, mag[p[begin]], mag[p[end]])))))
-    biasfunc = isnothing(bias) ? zero : LinearInterpolation(bias[p], mag[p]; extrapolation=Constant)
+    biasfunc = isnothing(bias) ? zero : extrapolate(interpolate((mag[p],), Float64.(bias[p]), Gridded(Linear())), Flat())
     return (completeness = completeness, bias = biasfunc, err = err)
 end
 
