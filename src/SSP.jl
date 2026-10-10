@@ -7,7 +7,7 @@ import StarFormationHistories as SFH
 import CSV
 import StellarTracks
 import YAML
-using BolometricCorrections: gridname
+using BolometricCorrections: gridname, select_filters
 using OrderedCollections: OrderedDict
 using Printf: Format, format
 using StableRNGs: StableRNG
@@ -73,7 +73,8 @@ end
 # from `seed`
 function fit_combination(tl, bc, h, config, parameters, err, completeness, bias, background, mask, seed)
     iso_symb, yidx, xidxs = iso_filters(bc, config.ystring, config.xstrings)
-    isofunc(logAge, mh, Av) = (iso = StellarTracks.isochrone(tl, bc, logAge, mh, Av); (iso.m_ini, [getproperty(iso, s) for s in iso_symb]))
+    grid = select_filters(bc, iso_symb) # BC tables interpolate only the filters that are used
+    isofunc(logAge, mh, Av) = (iso = StellarTracks.isochrone(tl, grid, logAge, mh, Av); (iso.m_ini, [getproperty(iso, s) for s in iso_symb]))
     model = SFH.SSPModel(isofunc, h.weights, h.edges, err, yidx, xidxs, config.imf, completeness, bias;
                          parameters..., binary_model=config.binary_model, background, background_floor=config.background.floor, mask)
     rng = StableRNG(seed)

@@ -7,7 +7,7 @@ import StarFormationHistories as SFH
 import CSV
 import YAML
 using ArgCheck: @argcheck
-using BolometricCorrections: filternames, Av_nodes
+using BolometricCorrections: filternames, select_filters, Av_nodes
 using DelimitedFiles: writedlm
 using OrderedCollections: OrderedDict
 using StableRNGs: StableRNG
@@ -114,6 +114,8 @@ function simulate_catalog(config::AbstractDict)
         dupes = unique(f for f in mag_names if count(==(f), mag_names) > 1)
         error("Invalid configuration: output filters $(join(dupes, ", ")) appear in more than one bolometric correction grid; use `filters` to select each from one grid.")
     end
+    # Isochrones are computed only for the output filters of each grid; `bcs` keeps every filter for the fit configuration
+    iso_bcs = map(select_filters, bcs, bcfilters)
     imf = parse_imf(config)
     binary_model = parse_binaries(config)
 
@@ -244,7 +246,7 @@ function simulate_catalog(config::AbstractDict)
     # Isochrones of the SSPs to sample; SSPs below min_ssp_mass are skipped because sampling draws at least one star per SSP
     # Names local to these closures must not match locals of simulate_catalog, which closures would capture and share
     function ssp_isochrone(k)
-        grids = [isochrone(tracklib, bc, ssp_logAge[k], ssp_MH[k], a) for a in knots for bc in bcs]
+        grids = [isochrone(tracklib, bc, ssp_logAge[k], ssp_MH[k], a) for a in knots for bc in iso_bcs]
         m_ini = collect(Float64, first(grids).m_ini)
         all(g -> g.m_ini == m_ini, grids) || error("Isochrones from different bolometric correction grids or extinctions have different initial masses.")
         # Magnitudes in the order of knot_names: every output filter at the first knot, then at the second, and so on
