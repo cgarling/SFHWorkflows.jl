@@ -16,8 +16,8 @@ end
 @info "Detected $(count(detected)) of $(length(detected)) simulated stars"
 
 # Fit the cluster. `results` is a matrix indexed by stellar track library first and bolometric correction grid second,
-# like `result.results` from fit_sfh; each entry has fields `model`, `fit` (the best fit), and `chain` (the posterior
-# samples). `h` is the observed Hess diagram.
+# like `result.results` from fit_sfh; each entry has fields `model`, `fit` (the best fit), and `samples` (the
+# posterior samples, with the modes of the posterior). `h` is the observed Hess diagram.
 results, h = fit_ssp("config.yml")
 
 # Below is code to make figures comparing the fit to the simulated cluster. If you'd rather make your own from the
@@ -49,14 +49,14 @@ plot_ssp_cmd(r, catalog.F475W_obs[detected] .- catalog.F814W_obs[detected], cata
 
 # Observed and best-fit model Hess diagrams with their residuals. The best fit is the highest posterior density found by
 # the optimizer or the sampler, as in the summary table.
-best, _ = best_fit(r.fit, r.chain)
+best, _ = best_fit(r.fit, r.samples)
 plot_path = joinpath(output_path, "results_hess.pdf")
 fig, axs = SFHWorkflows.SFHFitting.plot_cmd_residuals(h, SFH.ssp_hess(r.model, best), join(xcolor, " - "), yfilter, cluster_name, plot_path; gates)
 fig[0, :] = Label(fig, label, fontsize = 22, halign = :center)
 save(plot_path, fig)
 
-# Corner plot of the posterior samples, with the true values in red and the best fit in blue. It can also be made later
-# from the output files, e.g., for the chain file of PARSEC + YBC,
-# plot_ssp_corner(joinpath(output_path, "results_chain_PARSEC_YBC.txt"), "corner.pdf";
+# Corner plot of the posterior samples, with the true values in red, the best fit in blue, and the modes of the posterior
+# as orange circles. It can also be made later from the output files, e.g., for the samples file of PARSEC + YBC,
+# plot_ssp_corner(joinpath(output_path, "results_samples_PARSEC_YBC.txt"), "corner.pdf";
 #                 best = SFHWorkflows.SSPFitting.read_best(joinpath(output_path, "results.txt"), "PARSEC_YBC"))
-isnothing(r.chain) || plot_ssp_corner(r, joinpath(output_path, "results_corner.pdf"); truth)
+isnothing(r.samples) || plot_ssp_corner(r, joinpath(output_path, "results_corner.pdf"); truth)

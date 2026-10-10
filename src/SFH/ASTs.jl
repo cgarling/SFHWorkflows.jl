@@ -184,11 +184,11 @@ end
 """
     (completeness, bias, err) = snr_model(mag, snr; bias=nothing, minerr=0, snr50=5, width=1)
 Returns completeness, bias, and photometric error functions of apparent magnitude for a filter whose signal-to-noise
-ratio `snr` is tabulated at apparent magnitudes `mag`. `log10(snr)` is interpolated linearly in magnitude and
-extrapolated linearly beyond the table, so the SNR keeps falling past the faint end rather than flattening.
-The error is `max(minerr, StarFormationHistories.magerr_snr(SNR))`. The bias is zero unless `bias` gives its value at
-each of `mag`, in which case it is interpolated linearly and held constant beyond the table. The completeness is
-`0.5 * (1 + erf((SNR - snr50) / (sqrt(2) * width)))`.
+ratio `snr` is tabulated at apparent magnitudes `mag`. `log10(snr)` is interpolated linearly in magnitude. The
+completeness is `0.5 * (1 + erf((SNR - snr50) / (sqrt(2) * width)))`, with `log10(snr)` extrapolated linearly beyond
+the table so the completeness keeps falling past the faint end. The error is
+`max(minerr, StarFormationHistories.magerr_snr(SNR))` and, like the bias, is held constant beyond the table. The bias is
+zero unless `bias` gives its value at each of `mag`, in which case it is interpolated linearly.
 """
 function snr_model(mag, snr; bias=nothing, minerr::Number=0, snr50::Number=5, width::Number=1)
     @argcheck length(mag) == length(snr) >= 2
@@ -201,7 +201,9 @@ function snr_model(mag, snr; bias=nothing, minerr::Number=0, snr50::Number=5, wi
     @argcheck snr[p[end]] < snr[p[end-1]] "Tabulated SNR must decrease between the two faintest magnitudes."
     logsnr = LinearInterpolation(log10.(snr[p]), mag[p]; extrapolation=ExtrapolationType.Linear)
     completeness(m) = (1 + erf((exp10(logsnr(m)) - snr50) / (sqrt(2) * width))) / 2
-    err(m) = max(minerr, SFH.magerr_snr(exp10(logsnr(m))))
+    # Errors extrapolated with the SNR would grow without bound (hundreds of mag for stars far below the detection
+    # limit), making their template kernels cover the whole Hess diagram
+    err(m) = max(minerr, SFH.magerr_snr(exp10(logsnr(clamp(m, mag[p[begin]], mag[p[end]])))))
     biasfunc = isnothing(bias) ? zero : LinearInterpolation(bias[p], mag[p]; extrapolation=Constant)
     return (completeness = completeness, bias = biasfunc, err = err)
 end

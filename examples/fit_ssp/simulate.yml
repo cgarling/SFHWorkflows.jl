@@ -37,8 +37,9 @@ metallicity:
   beta: -1.2
   std: 0.1 # Has no effect with a single MH grid entry
 
+seed: 7
+
 sampling:
-  seed: 7
   mag_lim: 30.0
   mag_lim_filter: F814W
 
