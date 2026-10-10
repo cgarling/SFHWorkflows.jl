@@ -88,7 +88,7 @@ function simulate_catalog(config::AbstractDict)
     output_path = get(config["output"], "path", ".")
     sampling = get!(config, "sampling", OrderedDict{String, Any}())
     # The seed is always recorded in the saved input.yml so the catalog can be regenerated
-    seed = get!(sampling, "seed", rand(0:typemax(Int)))
+    seed = get!(config, "seed", rand(0:typemax(Int)))
     rng = StableRNG(seed)
 
     # Stellar models and output filters

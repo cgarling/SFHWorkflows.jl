@@ -10,7 +10,6 @@ import YAML
 using BolometricCorrections: gridname
 using OrderedCollections: OrderedDict
 using Printf: Format, format
-using Random: Random
 using StableRNGs: StableRNG
 using StatsBase: Histogram, quantile
 using TypedTables: Table
@@ -70,73 +69,68 @@ function restrict_parameters(parameters, stellar_tracks, bcs)
     return merge(parameters, (logAge=restrict(parameters.logAge, la_lo, la_hi, "logAge"), MH, Av))
 end
 
-# Fits one combination of stellar track library and BC grid, sampling the posterior with `seed` if requested
+# Fits one combination of stellar track library and BC grid, and samples the posterior if requested, with random numbers
+# from `seed`
 function fit_combination(tl, bc, h, config, parameters, err, completeness, bias, background, mask, seed)
     iso_symb, yidx, xidxs = iso_filters(bc, config.ystring, config.xstrings)
     isofunc(logAge, mh, Av) = (iso = StellarTracks.isochrone(tl, bc, logAge, mh, Av); (iso.m_ini, [getproperty(iso, s) for s in iso_symb]))
     model = SFH.SSPModel(isofunc, h.weights, h.edges, err, yidx, xidxs, config.imf, completeness, bias;
                          parameters..., binary_model=config.binary_model, background, background_floor=config.background.floor, mask)
-    fit = SFH.fit_ssp(model; config.ngrid, config.restarts)
-    config.run_sampling || return (; model, fit, chain=nothing)
-    # KissMCMC draws its proposals from the task-local default random number generator
-    Random.seed!(seed)
-    chain = SFH.sample_ssp(fit, config.nsteps; nwalkers=config.nwalkers, nburnin=config.nburnin, rng=StableRNG(seed),
-                           use_progress_meter=false)
-    return (; model, fit, chain)
+    rng = StableRNG(seed)
+    fit = SFH.fit_ssp(model; config.ncandidates, config.nstarts, config.restarts, rng)
+    config.run_sampling || return (; model, fit, samples=nothing)
+    samples = SFH.sample_ssp(fit; config.pilot_steps, config.pilot_walkers, config.is_rounds, config.is_samples, rng)
+    return (; model, fit, samples)
 end
 
 # Number formats for the output tables; fractions, masses, and star counts can span orders of magnitude (e.g., a background
 # fraction near 0), so they are written in exponential format
-column_format(name) = name in (:iteration, :walker) ? "%d" : name in (:lp, :lp_best) ? "%.2f" :
-    any(s -> occursin(s, string(name)), ("fraction", "mass", "background_stars")) ? "%.4e" : "%.5f"
+column_format(name) = name in (:mode, :modes) ? "%d" : name == :ess ? "%.0f" : name in (:lp, :lp_best, :logZ) ? "%.3f" :
+    any(s -> occursin(s, string(name)), ("fraction", "mass", "background_stars", "weight")) ? "%.4e" : "%.5f"
 function write_table(fname, table, comments)
     names = collect(propertynames(table))
     open(fname, "w") do io
         foreach(c -> println(io, "# ", c), comments)
-        CSV.write(io, table; delim=' ', transform=(col, val) -> val isa Number ? format(Format(column_format(names[col])), val) : val)
+        # append keeps CSV.write from seeking back to the start of `io` and overwriting the comments
+        CSV.write(io, table; append=true, writeheader=true, delim=' ', transform=(col, val) -> val isa Number ? format(Format(column_format(names[col])), val) : val)
     end
 end
 
-# Chain table with one row per sample: iteration, walker, free parameters, derived quantities, and log density
-function chain_table(chain)
-    its = collect(range(chain))
-    nwalk = size(chain, 3)
-    cols = OrderedDict{Symbol, Vector}(:iteration => repeat(its, nwalk), :walker => repeat(1:nwalk; inner=length(its)))
-    for k in vcat(names(chain, :parameters), names(chain, :internals))
-        cols[k] = vec(Array(chain[k]))
-    end
-    return Table(NamedTuple(cols))
-end
+# Table of the modes of the posterior samples `s` (StarFormationHistories.SSPSamples): the posterior probability, log
+# evidence, and effective sample size of each mode, and the local solution of fit_ssp it was found from
+modes_table(s) = Table([merge((mode=k, weight=m.weight, logZ=m.logZ, ess=m.ess, lp=m.logdensity), NamedTuple{Tuple(s.fit.model.free)}(m.θ))
+                        for (k, m) in enumerate(s.modes)])
 
 # Highest-density parameters found and their log density: the MAP from the optimizer, or the posterior sample with the
 # highest log density if it is higher
-function best_fit(fit, chain)
-    isnothing(chain) && return fit.map, fit.logdensity
-    lp = vec(Array(chain[:lp]))
+function best_fit(fit, samples)
+    isnothing(samples) && return fit.map, fit.logdensity
+    lp = samples.samples.lp
     i = argmax(lp)
     lp[i] <= fit.logdensity && return fit.map, fit.logdensity
-    return SFH.ssp_params(fit.model, [vec(Array(chain[k]))[i] for k in fit.model.free]), lp[i]
+    return SFH.ssp_params(fit.model, [samples.samples[k][i] for k in fit.model.free]), lp[i]
 end
 
-# Summary row: best fit and 16th, 50th, and 84th percentiles of each free parameter and derived quantity, and the
-# stellar mass formed at the best fit
-function summary_row(name, fit, chain)
-    best, lp = best_fit(fit, chain)
+# Summary row: best fit and 16th, 50th, and 84th percentiles of each free parameter and derived quantity, the stellar mass
+# formed at the best fit, and the log evidence, effective sample size, and number of modes of the posterior samples
+function summary_row(name, fit, s)
+    best, lp = best_fit(fit, s)
     row = OrderedDict{Symbol, Any}(:name => name, :lp_best => lp)
     for k in fit.model.free
         row[Symbol(k, :_best)] = best[k]
-        samples = isnothing(chain) ? Float64[] : vec(Array(chain[k]))
-        for (s, q) in zip((:_lower, :_median, :_upper), (0.16, 0.5, 0.84))
-            row[Symbol(k, s)] = isempty(samples) ? NaN : quantile(samples, q)
+        samples = isnothing(s) ? Float64[] : s.samples[k]
+        for (suffix, q) in zip((:_lower, :_median, :_upper), (0.16, 0.5, 0.84))
+            row[Symbol(k, suffix)] = isempty(samples) ? NaN : quantile(samples, q)
         end
     end
     row[:mass_best] = SFH.ssp_mass(fit.model, best)
-    if !isnothing(chain)
-        derived = Dict(:mass => vec(Array(chain[:mass])), :background_stars => vec(Array(chain[:background_stars])))
-        :logAge in fit.model.free && (derived[:age_Gyr] = exp10.(vec(Array(chain[:logAge])) .- 9))
-        for k in (:age_Gyr, :mass, :background_stars), (s, q) in zip((:_lower, :_median, :_upper), (0.16, 0.5, 0.84))
-            haskey(derived, k) && (row[Symbol(k, s)] = quantile(derived[k], q))
+    if !isnothing(s)
+        derived = Dict(:mass => s.samples.mass, :background_stars => s.samples.background_stars)
+        :logAge in fit.model.free && (derived[:age_Gyr] = exp10.(s.samples.logAge .- 9))
+        for k in (:age_Gyr, :mass, :background_stars), (suffix, q) in zip((:_lower, :_median, :_upper), (0.16, 0.5, 0.84))
+            haskey(derived, k) && (row[Symbol(k, suffix)] = quantile(derived[k], q))
         end
+        row[:logZ], row[:ess], row[:modes] = s.logZ, s.ess, length(s.modes)
     end
     return NamedTuple(row)
 end
@@ -151,19 +145,20 @@ the configuration (see `examples/fit_ssp/config.yml`). The combinations are fit 
 maximum a posteriori (MAP) parameters are found with `StarFormationHistories.fit_ssp` and the posterior is sampled with
 `StarFormationHistories.sample_ssp` unless `sampling.run` is `false`.
 
-Writes to `output.path` a summary table (`output.filename`) with one row per combination, the posterior samples of each
-combination, the observed Hess diagram and the best-fit model Hess diagram of each combination, and a copy of the
-configuration including the random seed. Returns the matrix `results` indexed by stellar track library and BC grid, whose
-entries are `NamedTuple`s with fields `model` (`StarFormationHistories.SSPModel`), `fit`
-(`StarFormationHistories.SSPFit`), and `chain` (`MCMCChains.Chains`, or `nothing`), and the observed Hess diagram `h`.
+Writes to `output.path` a summary table (`output.filename`) with one row per combination, the posterior samples and the
+modes of the posterior of each combination, the observed Hess diagram and the best-fit model Hess diagram of each
+combination, and a copy of the configuration including the random seed; warnings from the sampler are also recorded in
+the summary table. Returns the matrix `results` indexed by stellar track library and BC grid, whose entries are
+`NamedTuple`s with fields `model` (`StarFormationHistories.SSPModel`), `fit` (`StarFormationHistories.SSPFit`), and
+`samples` (`StarFormationHistories.SSPSamples`, or `nothing`), and the observed Hess diagram `h`.
 """
 function fit_ssp(config::NamedTuple)
     output_path = config.output_path
     mkpath(output_path)
-    # The seed is always recorded in the saved input.yml so the samples can be reproduced
+    # The seed is always recorded in the saved input.yml so the fit and samples can be reproduced
     seed = isnothing(config.seed) ? rand(0:typemax(Int)) : Int(config.seed)
     cfg = deepcopy(config.config)
-    get!(cfg, "sampling", OrderedDict{String, Any}())["seed"] = seed
+    cfg["seed"] = seed
     YAML.write_file(joinpath(output_path, "input.yml"), cfg)
 
     edges = (config.xbins, config.ybins)
@@ -189,18 +184,23 @@ function fit_ssp(config::NamedTuple)
     base, ext = splitext(config.output_filename)
     write_histogram(h, joinpath(output_path, base * "_obshess" * ext))
     fixed = join(("$k = $v" for (k, v) in pairs(parameters) if v isa Real), ", ")
+    warnings = String[]
     rows = map(CartesianIndices(results)) do I
         r = results[I]
         name = gridname(config.stellar_tracks[I[1]]) * "_" * gridname(config.bcs[I[2]])
-        write_histogram(Histogram(edges, SFH.ssp_hess(r.model, first(best_fit(r.fit, r.chain)))), joinpath(output_path, base * "_modelhess_" * name * ext))
-        if !isnothing(r.chain)
-            write_table(joinpath(output_path, base * "_chain_" * name * ext), chain_table(r.chain), ["$name posterior samples", "Fixed parameters: $fixed", "Seed: $seed"])
+        write_histogram(Histogram(edges, SFH.ssp_hess(r.model, first(best_fit(r.fit, r.samples)))), joinpath(output_path, base * "_modelhess_" * name * ext))
+        if !isnothing(r.samples)
+            write_table(joinpath(output_path, base * "_samples_" * name * ext), Table(r.samples.samples),
+                        ["$name equal-weight posterior samples, worth $(round(Int, r.samples.ess)) independent samples", "Fixed parameters: $fixed", "Seed: $seed"])
+            write_table(joinpath(output_path, base * "_modes_" * name * ext), modes_table(r.samples),
+                        ["$name modes of the posterior: probability (weight), log evidence (logZ), effective sample size (ess), and the best local solution of the optimizer in each (lp and the free parameters)", "Seed: $seed"])
+            append!(warnings, ("Warning for $name: $w" for w in r.samples.warnings))
         end
-        summary_row(name, r.fit, r.chain)
+        summary_row(name, r.fit, r.samples)
     end
     write_table(joinpath(output_path, config.output_filename), Table(vec(rows)),
                 ["Best fit (highest log posterior density found by the optimizer or the sampler) and 16th, 50th, and 84th percentiles",
-                 "Fixed parameters: $fixed", "Seed: $seed"])
+                 "Fixed parameters: $fixed", "Seed: $seed", warnings...])
     return results, h
 end
 fit_ssp(config_file::AbstractString) = fit_ssp(parse_ssp_config(config_file))
@@ -219,12 +219,17 @@ end
 
 # Best fit of an entry of the `results` returned by fit_ssp, with the stellar mass formed at the best fit
 function best_with_mass(result)
-    best, _ = best_fit(result.fit, result.chain)
+    best, _ = best_fit(result.fit, result.samples)
     return merge(best, (mass = SFH.ssp_mass(result.model, best),))
 end
 
-# Columns of posterior samples by name, from an MCMCChains.Chains returned by sample_ssp or a chain file written by fit_ssp
-sample_columns(chain::SFH.MCMCChains.Chains) = Dict(k => vec(Array(chain[k])) for k in names(chain))
+# Free parameters and stellar mass formed at the local solution of fit_ssp from which each mode of `s` was found
+mode_points(s) = [merge(NamedTuple{Tuple(s.fit.model.free)}(m.θ), (mass = SFH.ssp_mass(s.fit.model, SFH.ssp_params(s.fit.model, m.θ)),))
+                  for m in s.modes]
+
+# Columns of posterior samples by name, from the StarFormationHistories.SSPSamples returned by sample_ssp or a samples file
+# written by fit_ssp
+sample_columns(s::SFH.SSPSamples) = Dict(pairs(s.samples))
 function sample_columns(file::AbstractString)
     f = CSV.File(file; delim=' ', comment="#")
     return Dict(k => collect(Float64, getproperty(f, k)) for k in propertynames(f))
@@ -236,22 +241,25 @@ const CORNER_LABELS = Dict(:logAge => L"\log_{10}(\mathrm{Age} / \mathrm{yr})", 
 
 """
     (fig, axs) = plot_ssp_corner(result::NamedTuple, output_file::AbstractString; truth=nothing)
-    (fig, axs) = plot_ssp_corner(chain, output_file::AbstractString; best=nothing, truth=nothing)
+    (fig, axs) = plot_ssp_corner(samples, output_file::AbstractString; best=nothing, truth=nothing, modes)
 
 Makes a corner plot of the posterior samples of an SSP fit and saves it to `output_file`: the distribution of each free
 parameter and of the stellar mass formed (as log10) on the diagonal, and of each pair of them below it. `result` is an
-entry of the `results` returned by `fit_ssp`, whose best fit (including its mass) is marked in blue. Alternatively,
-`chain` is the `MCMCChains.Chains` returned by `StarFormationHistories.sample_ssp` or the path to a chain file written by
-`fit_ssp`, with an optional best fit `best` given as a `NamedTuple` (e.g., from [`read_best`](@ref)). If given, the
-values in the `NamedTuple` `truth` (e.g., the true parameters of a simulated cluster, including `mass`) are marked in red;
-parameters missing from `truth` are not marked. Returns the figure and the matrix of axes, indexed by row and column.
+entry of the `results` returned by `fit_ssp`, whose best fit (including its mass) is marked in blue and the modes of its
+posterior with orange circles. Alternatively, `samples` is the `StarFormationHistories.SSPSamples` returned by
+`StarFormationHistories.sample_ssp` or the path to a samples file written by `fit_ssp`, with an optional best fit `best`
+given as a `NamedTuple` (e.g., from [`read_best`](@ref)) and the modes `modes` as a vector of `NamedTuple`s (by default
+those of an `SSPSamples`, and none for a file). If given, the values in the `NamedTuple` `truth` (e.g., the true
+parameters of a simulated cluster, including `mass`) are marked in red; parameters missing from `truth` are not marked.
+Returns the figure and the matrix of axes, indexed by row and column.
 """
 function plot_ssp_corner(result::NamedTuple, output_file::AbstractString; truth=nothing)
-    isnothing(result.chain) && throw(ArgumentError("`result` has no posterior samples; run fit_ssp with sampling.run set to true."))
-    return plot_ssp_corner(result.chain, output_file; best=best_with_mass(result), truth)
+    isnothing(result.samples) && throw(ArgumentError("`result` has no posterior samples; run fit_ssp with sampling.run set to true."))
+    return plot_ssp_corner(result.samples, output_file; best=best_with_mass(result), truth)
 end
-function plot_ssp_corner(chain, output_file::AbstractString; best=nothing, truth=nothing)
-    cols = sample_columns(chain)
+function plot_ssp_corner(samples, output_file::AbstractString; best=nothing, truth=nothing,
+                         modes=samples isa SFH.SSPSamples ? mode_points(samples) : nothing)
+    cols = sample_columns(samples)
     pars = [[k for k in SFH.SSP_PARAMETERS if haskey(cols, k)]; :mass]
     # The mass is plotted as log10(mass) so its tick labels stay short
     tf(k) = k == :mass ? log10 : identity
@@ -278,6 +286,12 @@ function plot_ssp_corner(chain, output_file::AbstractString; best=nothing, truth
             all(smask) || hexbin!(ax, samples[j], samples[i]; weights = .!smask, threshold = 1, bins = 30, colormap = cgrad([:gray70, :black]), colorscale = log10)
             isnothing(tj) || vlines!(ax, tj; color = :red)
             isnothing(ti) || hlines!(ax, ti; color = :red)
+            # Modes are open circles, so both show when the best fit is also the location of a mode
+            if !isnothing(modes)
+                mj, mi = [value(m, pars[j]) for m in modes], [value(m, pars[i]) for m in modes]
+                ok = .!isnothing.(mj) .& .!isnothing.(mi)
+                any(ok) && scatter!(ax, Float64.(mj[ok]), Float64.(mi[ok]); color = :transparent, strokecolor = :darkorange, strokewidth = 2, markersize = 14)
+            end
             isnothing(bi) || isnothing(bj) || scatter!(ax, [bj], [bi]; color = :dodgerblue, marker = :xcross, markersize = 12)
             j > 1 && hideydecorations!(ax; grid = false)
         end
@@ -287,6 +301,7 @@ function plot_ssp_corner(chain, output_file::AbstractString; best=nothing, truth
     entries = Tuple{Any, String}[]
     isnothing(truth) || push!(entries, (LineElement(color = :red), "Truth"))
     isnothing(best) || push!(entries, (MarkerElement(color = :dodgerblue, marker = :xcross, markersize = 12), "Best fit"))
+    isnothing(modes) || isempty(modes) || push!(entries, (MarkerElement(marker = :circle, color = :transparent, strokecolor = :darkorange, strokewidth = 2, markersize = 14), length(modes) == 1 ? "Mode" : "Modes"))
     isempty(entries) || Legend(fig[1, max(2, n - 1):n], first.(entries), last.(entries); framevisible = false)
     rowgap!(fig.layout, 0)
     save(output_file, fig)
@@ -313,7 +328,7 @@ a simulated cluster) is also plotted; parameters missing from `truth` are taken 
 (e.g., from `data.binning.gates`) are outlined. Returns the figure and axis.
 """
 plot_ssp_cmd(result::NamedTuple, color, mag, output_file::AbstractString; kws...) =
-    plot_ssp_cmd(result.model, first(best_fit(result.fit, result.chain)), color, mag, output_file; kws...)
+    plot_ssp_cmd(result.model, first(best_fit(result.fit, result.samples)), color, mag, output_file; kws...)
 function plot_ssp_cmd(model::SFH.SSPModel, best::NamedTuple, color, mag, output_file::AbstractString; truth=nothing, xlabel="", ylabel="", title="", gates=[])
     # Fixed parameters are not in `best` when it is read from the summary table
     best = merge(model.params, best)

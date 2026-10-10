@@ -81,8 +81,9 @@ metallicity:
   # mstar0: 1e6
   # std: 0.1
 
+seed: 42 # Optional random seed for reproducible catalogs; omit for a random seed, which is saved in the output input.yml
+
 sampling:
-  seed: 42             # Optional RNG seed for reproducible catalogs; omit for a random seed
   mag_lim: 30.0        # Optional apparent magnitude limit; fainter systems are not stored. Default Inf
   mag_lim_filter: F814W
   min_ssp_mass: 0.01   # SSPs with less than this birth mass [solar masses] are not sampled, since
@@ -107,8 +108,9 @@ mockobservations:
     # maxerr: 0.25
   filters:
     # Per-filter models from a tabulated SNR(mag) or mag_err(mag) curve, given in apparent magnitudes.
-    # log10(SNR) is interpolated linearly in magnitude and extrapolated linearly beyond the table, so
-    # SNR keeps falling (and completeness goes to 0) past the faint end; SNR must not increase toward
+    # log10(SNR) is interpolated linearly in magnitude. Past the faint end of the table, completeness keeps
+    # falling to 0 as if log10(SNR) were extrapolated linearly, while the error is held at its value at
+    # the end of the table, as it is past the bright end; SNR must not increase toward
     # fainter magnitudes and must fall between the two faintest points. Magnitude error `mag_err` and
     # signal-to-noise ratio `snr` are converted between assuming mag_err = max(minerr, 1.0857 / SNR).
     # Only one of `snr` or `mag_err` can be provided for each filter.
@@ -144,7 +146,7 @@ fit:
   # point (x0 = true values, all free). As in fit_sfh, the initial SFH guess is a constant SFR.
   run: true # Default false
   stellar_mass_error: 0.05 # Initial Mstar drawn from Normal(stellar_mass, stellar_mass_error * stellar_mass)
-                           # using sampling.seed; default 0 (start at the true stellar_mass)
+                           # using seed; default 0 (start at the true stellar_mass)
   binning: # Required when run is true; same keys as data.binning in fit_sfh
     yfilter: F814W       # Must be mock-observed filters
     xcolor: F475W, F814W

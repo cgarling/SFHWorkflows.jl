@@ -526,17 +526,21 @@ function parse_ssp_config(config::AbstractDict)
     parameters = parse_parameters(config, binary_model; background=background.enabled)
     sampling = get(config, "sampling", OrderedDict{String, Any}())
     nfree = count(v -> !(v isa Real), parameters)
-    nwalkers = Int(get(sampling, "nwalkers", max(16, 4 * nfree)))
-    (iseven(nwalkers) && nwalkers >= nfree + 2) || error("Invalid configuration: sampling.nwalkers must be even and at least the number of free parameters plus 2 ($(nfree + 2)).")
+    pilot_walkers = Int(get(sampling, "pilot_walkers", max(16, 4 * nfree)))
+    (iseven(pilot_walkers) && pilot_walkers >= nfree + 2) || error("Invalid configuration: sampling.pilot_walkers must be even and at least the number of free parameters plus 2 ($(nfree + 2)).")
+    is_rounds = Int(get(sampling, "is_rounds", 3))
+    # Checked here, as by sample_ssp, so that an invalid configuration fails before the fit rather than after it
+    is_rounds >= 3 || error("Invalid configuration: sampling.is_rounds must be at least 3; fewer rounds do not adapt the proposal reliably.")
     fit = get(config, "fit", OrderedDict{String, Any}())
     @info "Loading stellar tracks"
     stellar_tracks = parse_tracks(config)
     @info "Loading bolometric corrections"
     bcs = parse_bcs(config)
     return (; data..., background, imf=parse_imf(config), binary_model, parameters, stellar_tracks, bcs,
-            ngrid=Tuple(Int.(get(fit, "ngrid", [16, 12]))), restarts=Int(get(fit, "restarts", 3)), run_sampling=Bool(get(sampling, "run", true)),
-            nsteps=Int(get(sampling, "nsteps", 3000)), nburnin=Int(get(sampling, "nburnin", 1000)), nwalkers,
-            seed=get(sampling, "seed", nothing), plot_diagnostics=Bool(get(get(config, "plotting", Dict()), "diagnostics", true)),
+            ncandidates=Int(get(fit, "ncandidates", 1000)), nstarts=Int(get(fit, "nstarts", 16)), restarts=Int(get(fit, "restarts", 3)), run_sampling=Bool(get(sampling, "run", true)),
+            pilot_steps=Int(get(sampling, "pilot_steps", 300)), pilot_walkers, is_rounds,
+            is_samples=Int(get(sampling, "is_samples", 2000)),
+            seed=get(config, "seed", nothing), plot_diagnostics=Bool(get(get(config, "plotting", Dict()), "diagnostics", true)),
             output_path=get(config["output"], "path", "."), output_filename=config["output"]["filename"], config)
 end
 

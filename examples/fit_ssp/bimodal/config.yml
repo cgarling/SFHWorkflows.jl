@@ -1,0 +1,71 @@
+# Configuration for `fit_ssp` that fits the combined catalog of the two simulated populations with a single stellar
+# population. See ../config.yml and ../README.md for every option.
+
+data:
+  path: ./results/simulation # Common path prefix to add to photometry_file
+  photometry:
+    photometry_file: phot.dat # Written by bimodal.jl; one column per filter, apparent magnitudes
+    filters: F475W, F814W
+  # The same signal-to-noise ratio curves as the simulations
+  filters:
+    F475W:
+      mag: [20.5, 25.5, 26.5, 27.5, 28.0, 28.5, 29.0, 29.5]
+      snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97]
+      bias: [0.0, 0.0, 0.0, -0.005, -0.01, -0.02, -0.03, -0.04]
+      minerr: 0.01
+    F814W:
+      mag: [18.9, 23.9, 24.9, 25.9, 26.4, 26.9, 27.4, 27.9]
+      snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97]
+      bias: [0.0, 0.0, 0.0, -0.005, -0.01, -0.02, -0.03, -0.04]
+      minerr: 0.01
+  binning:
+    # Only the bright stars, which have small photometric errors, are fit
+    ybins: range(14.0, 23.5; step=0.05)
+    xbins: range(-0.5, 2.5; step=0.04)
+    yfilter: F814W
+    xcolor: F475W, F814W
+    gates:
+
+imf:
+  model: Kroupa2001
+  mmin: 0.08
+  mmax: 100.0
+
+binaries:
+  model: NoBinaries
+
+stellartracks:
+  track1:
+    name: PARSEC
+
+bolometriccorrections:
+  bc1:
+    name: YBC
+    filterset: acs_wfc
+
+parameters:
+  logAge: Uniform(8.5, 10.13)
+  MH: Uniform(-2.2, 0.0)
+  distance_modulus: Normal(18.5, 0.1)
+  Av: truncated(Normal(0.1, 0.05), 0, Inf)
+  # The stars of the population that does not fit go into the uniform background
+  background_fraction: Uniform(0, 0.9)
+
+fit:
+  ncandidates: 1000
+  restarts: 3
+
+sampling:
+  run: true
+  pilot_steps: 300
+  is_rounds: 3
+  is_samples: 2000
+
+seed: 1
+
+plotting:
+  diagnostics: false
+
+output:
+  path: ./results/fit
+  filename: results.txt

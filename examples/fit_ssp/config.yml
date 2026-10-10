@@ -62,15 +62,20 @@ parameters:
   background_fraction: Uniform(0, 0.5) # Fraction of the observed stars in the background
 
 fit:
-  ngrid: [16, 12] # Starting grid in logAge and MH
-  restarts: 3     # Times each optimization may restart while it keeps improving
+  ncandidates: 1000 # Candidate starting points searched over the free age, metallicity, and distance
+  # nstarts: 16     # Most optimizations started from the best candidates; a warning says if more were found
+  restarts: 3       # Times each optimization may restart while it keeps improving
 
+# The sampler warns when these settings are too small for your fit; see README.md for what each one does.
 sampling:
-  run: true    # false stops after finding the best fit
-  nsteps: 1000 # Steps per walker
-  nburnin: 500 # Initial steps per walker that are discarded
-  # nwalkers: 24 # Default is 4 times the number of free parameters, at least 16
-  seed: 1      # Optional; omit for a random seed, which is saved in the output input.yml
+  run: true         # false stops after finding the best fit
+  pilot_steps: 300  # Steps of the short sampler run that measures the shape of each mode of the posterior
+  # pilot_walkers: 24 # Walkers in each pilot run; default is 4 times the number of free parameters, at least 16
+  is_rounds: 3      # Rounds of importance sampling that refine the pilot's estimate of each mode; at least 3
+  is_samples: 2000  # Draws per round of importance sampling
+
+# Random seed of the fit and the sampler. Optional; omit for a random seed, which is saved in the output input.yml
+seed: 1
 
 plotting:
   diagnostics: true # Writes diagnostics.pdf showing the completeness used in the fit

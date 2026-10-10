@@ -15,7 +15,8 @@ data:
     maxerr: 0.25   # maximum photometric error to allow in model
   # filters:
   #   # Per-filter models from a tabulated SNR(mag) or mag_err(mag) curve in apparent magnitudes.
-  #   # log10(SNR) is interpolated linearly in magnitude and extrapolated linearly beyond the table.
+  #   # log10(SNR) is interpolated linearly in magnitude. Past the faint end of the table, completeness keeps
+  #   # falling as if log10(SNR) were extrapolated linearly, while the error is held at its value at the end.
   #   # SNR must not increase toward fainter magnitudes and must fall between the two faintest points.
   #   # Error is max(minerr, 1.0857 / SNR); bias is interpolated linearly from `bias` (default 0).
   #   F606W:

@@ -1,8 +1,11 @@
 using SFHWorkflows
 using SFHWorkflows.SFHFitting.ASTs: snr_model, fill_nan
 using SFHWorkflows.SFHFitting.Parsing: parse_gates, parse_filter_models, check_filter_models, parse_binaries, parse_imf, parse_metallicity,
-    parse_prior, age_prior, distance_prior, restrict, parse_parameters, TransformedPrior, parse_background, parse_extinction
+    parse_prior, age_prior, distance_prior, restrict, parse_parameters, TransformedPrior, parse_background, parse_extinction,
+    parse_ssp_config
 import Distributions
+import YAML
+using OrderedCollections: OrderedDict
 using SFHWorkflows.Simulate: sfh_mass_fractions
 using SFHWorkflows.SFHFitting.Plotting: sparse_mask
 using SFHWorkflows.SFHFitting.Systematics: optim_status
@@ -15,7 +18,7 @@ using Test
     # log10(SNR) falls linearly from 2 at mag 20 to 1 at mag 25
     c, b, e = snr_model([20.0, 25.0], [100.0, 10.0])
     @test e(22.5) ≈ SFH.magerr_snr(exp10(1.5))
-    @test e(30.0) ≈ SFH.magerr_snr(exp10(0.0)) # Linear extrapolation in log10(SNR) past the faint end
+    @test (e(30.0), e(15.0)) == (e(25.0), e(20.0)) # Held constant beyond the table, so errors stay bounded
     @test b(27.0) == 0
     m50 = 20 + (2 - log10(5)) / 0.2 # SNR = snr50 = 5
     @test c(m50) ≈ 0.5
@@ -179,6 +182,19 @@ end
     @test_throws "must be two" parse_metallicity(merge(c, Dict("constraints" => [[-2.5, 13.7]])); T_max=13.7)
 end
 
+@testset "parse_ssp_config" begin
+    # The sampling settings are checked before the stellar tracks are loaded, so a minimal photometry file suffices
+    dir = mktempdir()
+    write(joinpath(dir, "phot.dat"), "25.0 24.0\n25.5 24.5\n")
+    cfg = YAML.load_file(joinpath(pkgdir(SFHWorkflows), "examples", "fit_ssp", "config.yml"); dicttype=OrderedDict{String, Any})
+    cfg["data"]["path"] = dir
+    cfg["sampling"]["is_rounds"] = 2
+    @test_throws "is_rounds must be at least 3" parse_ssp_config(cfg)
+    cfg["sampling"]["is_rounds"] = 3
+    cfg["sampling"]["pilot_walkers"] = 7
+    @test_throws "pilot_walkers must be even" parse_ssp_config(cfg)
+end
+
 @testset "sfh_mass_fractions" begin
     logAge = [9.0, 9.5, 10.0]
     t = [1.0, exp10(0.5), 10.0, 13.0] # Bin edges in lookback time [Gyr]
@@ -201,10 +217,11 @@ end
     @test sparse_mask(x, y; bins=4, threshold=10) == vcat(falses(30), true, true)
     @test column_format(:background_fraction) == column_format(:mass) == "%.4e"
     @test column_format(:logAge) == "%.5f"
-    @test column_format(:walker) == "%d"
+    @test column_format(:mode) == "%d"
     # The best fit is read back from a summary table as written by fit_ssp
     f = tempname()
     write_table(f, Table([(name="A", lp_best=-1.0, logAge_best=9.7, logAge_lower=9.6, mass_best=5e5)]), ["comment"])
+    @test startswith(read(f, String), "# comment\nname lp_best")
     @test read_best(f, "A") == (logAge=9.7, mass=5e5)
     # Convergence of an optimization that converges and of one stopped by its iteration limit
     quad(x) = sum(abs2, x .- (1, 2))
