@@ -6,8 +6,8 @@ export systematics, mag_select, iso_filters
 import StarFormationHistories as SFH
 import CSV
 using TypedTables: Table, columnnames, getproperties
-using BolometricCorrections: chemistry, MH, Z, filternames, AbstractBCGrid, AbstractBCTable, gridname, Av_nodes
-using StellarTracks: AbstractTrackLibrary, isochrone
+using BolometricCorrections: filternames, select_filters, AbstractBCGrid, AbstractBCTable, gridname, Av_nodes
+using StellarTracks: AbstractTrackLibrary, isochrone, apply_bc, bc_table, MH
 using ArgCheck: @argcheck
 using Printf: @printf, @sprintf, Format, format
 using LinearAlgebra: BLAS
@@ -15,12 +15,6 @@ using StatsBase: quantile
 import Optim
 # using Interpolations: interpolate, Gridded, Linear #, Throw, extrapolate, Flat
 # using Roots: find_zero # For taus
-
-"""
-    convert_MH(mh, tracks, bcs)
-Given an [M/H] value `mh` defined for the chemistry of the track object `tracks` (which can be any type from StellarTracks.jl that supports the `chemistry` API), returns the equivalent [M/H] value for the chemistry of the bolometric correction object `bcs` (which can be any type from BolometricCorrections.jl that supports the `chemistry` API).
-"""
-convert_MH(mh, tracks, bcs) = MH(chemistry(bcs), Z(chemistry(tracks), mh))
 
 """
     (xidx, yidxs) = mag_select(bcgrid::AbstractBCGrid, ystring::Union{AbstractString, Symbol}, xstrings)
@@ -128,9 +122,15 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
                    imf_mean::Number = SFH.mean(imf), extinction=Returns(nothing))
 
     iso_symb, yidx, xidxs = iso_filters(bclib, ystring, xstrings)
-
-    # Convert unique_MH (defined for the tracklib chemistry) to the bclib chemistry
-    unique_bc_MH = convert_MH.(unique_MH, Ref(tracklib), Ref(bclib))
+    # BC tables interpolate only the filters that are used
+    bclib = select_filters(bclib, iso_symb)
+    # `extinction(logage)` is the distribution of extinction, or `nothing` for extinction Av. Magnitudes are linear in
+    # extinction between the nodes of the BC grid, so isochrones are needed only at its ends and the nodes within it.
+    knots(dist) = isnothing(dist) ? [Av] : let (lo, hi) = extrema(dist)
+        [lo; filter(a -> lo < a < hi, Av_nodes(bclib)); hi]
+    end
+    all_knots = unique(reduce(vcat, (knots(extinction(logage)) for logage in unique_logAge)))
+    track_MH = extrema(MH(tracklib))
 
     templates = Vector{Matrix{Float64}}(undef, length(unique_logAge) * length(unique_MH))
     template_logAge = Vector{Float64}(undef, length(templates))
@@ -140,26 +140,22 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
 
     # @threads for (i, (mh, logage)) in collect(enumerate(Iterators.product(unique_MH, unique_logAge))) # issorted(mdf_template_logAge) == true
     Threads.@threads for i in eachindex(unique_MH)
-        # For mh outside the range of tracklib, isochrone evaluates the tracks at the nearest [M/H] in tracklib and
-        # the bolometric corrections at mh
         mh = unique_MH[i]
+        # BC tables depend only on [M/H] and the extinction, so each is built once for all ages
+        tables = Dict(a => bc_table(tracklib, bclib, mh, a) for a in all_knots)
 
         Threads.@threads for j in eachindex(unique_logAge)
             logage = unique_logAge[j]
             ind = j + ((i-1) * length(unique_logAge)) # index into templates and other buffers for (i,j)
-            # `extinction(logage)` is the distribution of extinction, or `nothing` for extinction Av. Magnitudes are
-            # linear in extinction between the nodes of the BC grid, so isochrones are needed only at its ends and the
-            # nodes within it.
             dist = extinction(logage)
-            knots = isnothing(dist) ? [Av] : let (lo, hi) = extrema(dist)
-                [lo; filter(a -> lo < a < hi, Av_nodes(bclib)); hi]
-            end
-            isos = [isochrone(tracklib, bclib, logage, mh, a) for a in knots]
-            m_ini = first(isos).m_ini
-            @argcheck all(iso.m_ini == m_ini for iso in isos)
-            kmags = [[getproperty(iso, k) for k in iso_symb] for iso in isos]
+            ks = knots(dist)
+            # As in isochrone(tracklib, bclib, logage, mh, Av): for mh outside the range of tracklib, the tracks are
+            # evaluated at the nearest [M/H] in tracklib and the bolometric corrections at mh
+            iso = isochrone(tracklib, logage, clamp(mh, track_MH...))
+            kmags = [(t = apply_bc(iso, tables[a]); [getproperty(t, k) for k in iso_symb]) for a in ks]
+            m_ini = iso.m_ini
             iso_mags = first(kmags)
-            templates[ind] = SFH.partial_cmd_smooth(m_ini, (isnothing(dist) ? (iso_mags,) : (kmags, knots, dist))...,
+            templates[ind] = SFH.partial_cmd_smooth(m_ini, (isnothing(dist) ? (iso_mags,) : (kmags, ks, dist))...,
                                                     err_funcs, yidx, xidxs, imf,
                                                     complete_funcs, bias_funcs; 
                                                     dmod=dmod, normalize_value=normalize_value, edges=edges, 
