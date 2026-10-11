@@ -21,6 +21,12 @@ Edit the `data` section of `config.yml`:
 
 Then update `properties` (distance modulus, extinction, and an approximate stellar mass) for your galaxy, and `bolometriccorrections` for your filter system.
 
+## Binaries
+`binaries.model` sets how unresolved binary stars are modeled, and `binaries.binary_fraction` is the fraction of stellar systems that are binaries. Like the extinction, the binary model is fixed, not fit.
+ - `NoBinaries`: every system is a single star.
+ - `RandomBinaryPairs`: a binary is two stars drawn independently from the IMF.
+ - `BinaryMassRatio`: the IMF gives the total mass of each system, so a system IMF such as `Chabrier2003System` is the natural choice. A binary splits its mass between two stars with a secondary-to-primary mass ratio drawn from `binaries.mass_ratio`, a distribution written as in [Distributions.jl](https://juliastats.org/Distributions.jl/stable/univariate/), e.g., `Beta(2, 2)` (default `Uniform(0.1, 1)`). Distributions extending outside [0, 1], e.g., `Normal(0.5, 0.25)`, are truncated to [0, 1].
+
 ## Differential extinction
 By default every star has extinction `properties.Av`. Set `properties.dAv` to spread the extinction of all stars uniformly from `Av` to `Av + dAv`, as the `-dAv` option of MATCH does, and `properties.dAvy` for an additional, independent uniform spread from 0 to `dAvy` for young stars, as `-dAvy` does (MATCH's default is 0.5). The young-star spread is full for ages below `properties.dAvy_t1` and tapers linearly to zero at `properties.dAvy_t2` (in Gyr; defaults 0.04 and 0.1, as in MATCH). `dAv` and `dAvy` are fixed, not fit; to choose them, compare the best fit over a few values. The templates follow each star along its reddening vector, so the extinctions `Av + dAv + dAvy` must be within the range of every bolometric correction grid. Templates with differential extinction take several times longer to build than those without.
 

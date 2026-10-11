@@ -26,6 +26,7 @@ If `fit.run` is set to `false`, the script instead plots the input cumulative SF
 ## Things to try
  - Change `sfh` to simulate a different star formation history, or `properties.stellar_mass` to change the number of stars.
  - Change `seed` to draw a different random realization of the same population.
+ - Simulate unresolved binaries, e.g., with `binaries.model: BinaryMassRatio`, `binary_fraction: 0.35`, and a `mass_ratio` distribution such as `Beta(2, 2)`; the binary models are described in the [`fit_sfh` example README](../fit_sfh/README.md#binaries).
  - Change `fit.binning` to fit a different region of the color-magnitude diagram, or give `fit.stellartracks` or `fit.bolometriccorrections` to fit with different models than were used to simulate the catalog and see the effect of model systematics.
  - Edit the generated `results/fit/input.yml` and rerun the fit alone with `fit_sfh("results/fit/input.yml")`.
 
