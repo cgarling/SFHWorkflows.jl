@@ -5,13 +5,13 @@ export systematics, mag_select, iso_filters
 
 import StarFormationHistories as SFH
 import CSV
-using TypedTables: Table, columnnames, getproperties
+using TypedTables: Table, columnnames, columns, getproperties
 using BolometricCorrections: filternames, select_filters, AbstractBCGrid, AbstractBCTable, gridname, Av_nodes
 using StellarTracks: AbstractTrackLibrary, isochrone, apply_bc, bc_table, MH
 using ArgCheck: @argcheck
 using Printf: @printf, @sprintf, Format, format
 using LinearAlgebra: BLAS
-using StatsBase: quantile
+using StatsBase: median, quantile
 import Optim
 # using Interpolations: interpolate, Gridded, Linear #, Throw, extrapolate, Flat
 # using Roots: find_zero # For taus
@@ -399,6 +399,10 @@ function systematics(MH_model0::SFH.AbstractMetallicityModel,
             masstable = Table(masstable; background_stars_lower = vec(background_stars[:,:,1]), background_stars = vec(background_stars[:,:,2]),
                               background_stars_upper = vec(background_stars[:,:,3]))
         end
+        # Systematic row: the lowest lower bound, median best value, and highest upper bound over all combinations
+        cols = columns(masstable)
+        push!(masstable, NamedTuple{keys(cols)}(k === :name ? "systematic" : endswith(string(k), "_lower") ? minimum(cols[k]) :
+                                                endswith(string(k), "_upper") ? maximum(cols[k]) : median(cols[k]) for k in keys(cols)))
         write_masstable(isnothing(output) ? nothing : splitext(output)[1]*"_mass"*splitext(output)[2], masstable)
         # Same row order as masstable
         convergence = Table([s for s in vec(status)])
