@@ -2,7 +2,7 @@ using SFHWorkflows
 using SFHWorkflows.SFHFitting.ASTs: snr_model, fill_nan
 using SFHWorkflows.SFHFitting.Parsing: parse_gates, parse_filter_models, check_filter_models, parse_binaries, parse_imf, parse_metallicity,
     parse_prior, age_prior, distance_prior, restrict, parse_parameters, TransformedPrior, parse_background, parse_extinction,
-    parse_ssp_config
+    parse_ssp_config, parse_ssp_binaries
 import Distributions
 import YAML
 using OrderedCollections: OrderedDict
@@ -122,12 +122,12 @@ end
     dgrid = range(24.0, 26.0; length=20001)
     @test sum(Distributions.pdf.(dd, dgrid)) * step(dgrid) ≈ 1 rtol=1e-4 # Normalized in distance modulus
     # Truncation of a transformed prior is applied to the underlying age distribution
-    t = restrict(d, 9.6, 10.13, "logAge")
+    t = restrict(d, 9.6, 10.13, "parameters.logAge")
     @test all((minimum(t), maximum(t)) .≈ (9.6, 10.13))
     @test Distributions.logpdf(t, 9.5) == -Inf
-    @test restrict(Distributions.Uniform(9.0, 10.0), 9.0, 10.13, "logAge") == Distributions.Uniform(9.0, 10.0)
-    @test (minimum(restrict(Distributions.Normal(10.0, 0.3), 9.0, 10.13, "logAge")), maximum(restrict(Distributions.Normal(10.0, 0.3), 9.0, 10.13, "logAge"))) == (9.0, 10.13)
-    @test_throws "outside the valid range" restrict(10.5, 9.0, 10.13, "logAge")
+    @test restrict(Distributions.Uniform(9.0, 10.0), 9.0, 10.13, "parameters.logAge") == Distributions.Uniform(9.0, 10.0)
+    @test (minimum(restrict(Distributions.Normal(10.0, 0.3), 9.0, 10.13, "parameters.logAge")), maximum(restrict(Distributions.Normal(10.0, 0.3), 9.0, 10.13, "parameters.logAge"))) == (9.0, 10.13)
+    @test_throws "parameters.logAge = 10.5 is outside the valid range" restrict(10.5, 9.0, 10.13, "parameters.logAge")
 end
 
 @testset "parse_parameters" begin
@@ -158,6 +158,16 @@ end
     bm = parse_binaries(Dict("binaries" => Dict("model" => "BinaryMassRatio", "binary_fraction" => 0.3)))
     @test bm isa SFH.BinaryMassRatio
     @test bm.fraction == 0.3
+    @test bm.qdist == Distributions.Uniform(0.1, 1.0)
+    bmr(q) = parse_binaries(Dict("binaries" => Dict("model" => "BinaryMassRatio", "binary_fraction" => 0.3, "mass_ratio" => q)))
+    @test bmr("Beta(2, 2)").qdist == Distributions.Beta(2.0, 2.0)
+    @test extrema(bmr("Normal(0.5, 0.25)").qdist) == (0.0, 1.0)
+    @test_logs (:warn, r"mean 1.5") (:info, r"Truncating") bmr("Normal(1.5, 1)")
+    @test_throws "only 0.0 of its probability in the valid range" bmr("Normal(5, 0.1)")
+    @test_throws "binaries.mass_ratio must be a distribution" bmr(0.5)
+    @test_throws "binaries.mass_ratio requires binaries.model BinaryMassRatio" parse_binaries(Dict("binaries" => Dict("model" => "RandomBinaryPairs", "binary_fraction" => 0.4, "mass_ratio" => "Beta(2, 2)")))
+    @test parse_ssp_binaries(Dict("binaries" => Dict("model" => "BinaryMassRatio", "mass_ratio" => "Beta(2, 2)"))).qdist == Distributions.Beta(2.0, 2.0)
+    @test_throws "binaries.mass_ratio requires binaries.model BinaryMassRatio" parse_ssp_binaries(Dict("binaries" => Dict("model" => "NoBinaries", "mass_ratio" => "Beta(2, 2)")))
     @test_throws "valid options are NoBinaries, RandomBinaryPairs, and BinaryMassRatio" parse_binaries(Dict("binaries" => Dict("model" => "Pairs")))
 end
 

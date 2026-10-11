@@ -54,7 +54,7 @@ imf:
 
 binaries:
   # Valid models: NoBinaries, RandomBinaryPairs, BinaryMassRatio (binary_fraction required for the latter two;
-  # BinaryMassRatio draws the secondary-to-primary mass ratio from Uniform(0.1, 1))
+  # BinaryMassRatio draws the secondary-to-primary mass ratio from mass_ratio, e.g., mass_ratio: Beta(2, 2), default Uniform(0.1, 1))
   # model: RandomBinaryPairs
   # binary_fraction: 0.4
   model: NoBinaries

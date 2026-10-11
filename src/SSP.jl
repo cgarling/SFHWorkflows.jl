@@ -59,14 +59,14 @@ BC grids, and logAge to the ages at which every track library returns an isochro
 function restrict_parameters(parameters, stellar_tracks, bcs)
     mh_lo, mh_hi = maximum(first(extrema(StellarTracks.MH(tl))) for tl in stellar_tracks), minimum(last(extrema(StellarTracks.MH(tl))) for tl in stellar_tracks)
     av_lo, av_hi = maximum(Float64(first(extrema(bc).Av)) for bc in bcs), minimum(Float64(last(extrema(bc).Av)) for bc in bcs)
-    MH = restrict(parameters.MH, mh_lo, mh_hi, "MH")
-    Av = restrict(parameters.Av, av_lo, av_hi, "Av")
+    MH = restrict(parameters.MH, mh_lo, mh_hi, "parameters.MH")
+    Av = restrict(parameters.Av, av_lo, av_hi, "parameters.Av")
     mh, av, la0 = center(MH), center(Av), center(parameters.logAge)
     # Search only as far as ages that are plausible for stellar populations
     lo_bound, hi_bound = max(bounds(parameters.logAge)[1], 5.0), min(bounds(parameters.logAge)[2], 10.5)
     la_lo = maximum(age_limit(tl, first(bcs), la0, lo_bound, mh, av) for tl in stellar_tracks)
     la_hi = minimum(age_limit(tl, first(bcs), la0, hi_bound, mh, av) for tl in stellar_tracks)
-    return merge(parameters, (logAge=restrict(parameters.logAge, la_lo, la_hi, "logAge"), MH, Av))
+    return merge(parameters, (logAge=restrict(parameters.logAge, la_lo, la_hi, "parameters.logAge"), MH, Av))
 end
 
 # Fits one combination of stellar track library and BC grid, and samples the posterior if requested, with random numbers

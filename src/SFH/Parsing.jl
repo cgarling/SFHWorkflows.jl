@@ -47,17 +47,33 @@ end
 
 function parse_binaries(dict)
     # binary_model = eval(Meta.parse(dict["binaries"]["model"]))
-    binary_model = strip_whitespace(dict["binaries"]["model"])
+    b = dict["binaries"]
+    binary_model = strip_whitespace(b["model"])
+    haskey(b, "mass_ratio") && binary_model != "BinaryMassRatio" && error("Invalid configuration: binaries.mass_ratio requires binaries.model BinaryMassRatio.")
     binary_model = if binary_model == "NoBinaries"
         NoBinaries()
     elseif binary_model == "RandomBinaryPairs"
-        RandomBinaryPairs(dict["binaries"]["binary_fraction"])
-    elseif binary_model == "BinaryMassRatio" # ponytail: default Uniform(0.1, 1) mass-ratio distribution only; parse `qdist` when needed
-        BinaryMassRatio(dict["binaries"]["binary_fraction"])
+        RandomBinaryPairs(b["binary_fraction"])
+    elseif binary_model == "BinaryMassRatio"
+        BinaryMassRatio(b["binary_fraction"], parse_mass_ratio(b))
     else
         error("Binary model $binary_model unrecognized; valid options are NoBinaries, RandomBinaryPairs, and BinaryMassRatio.")
     end
     return binary_model
+end
+
+# Mass-ratio distribution of BinaryMassRatio from binaries.mass_ratio (default Uniform(0.1, 1)), truncated to [0, 1]
+function parse_mass_ratio(b)
+    haskey(b, "mass_ratio") || return Distributions.Uniform(0.1, 1.0)
+    s = b["mass_ratio"]
+    d = parse_prior(s)
+    d isa Distributions.ContinuousUnivariateDistribution || error("Invalid configuration: binaries.mass_ratio must be a distribution, e.g., \"Uniform(0.1, 1)\".")
+    # A truncation holding almost none of the distribution has a normalization that underflows, giving NaN downstream
+    p = Distributions.cdf(d, 1) - Distributions.cdf(d, 0)
+    p >= 1e-3 || error("Invalid configuration: binaries.mass_ratio = $s has only $p of its probability in the valid range [0, 1].")
+    μ = Distributions.mean(d)
+    0 <= μ <= 1 || @warn "binaries.mass_ratio = $s has mean $μ, outside the valid range [0, 1], so most of it will be truncated away; check that this distribution is intended."
+    return restrict(d, 0, 1, "binaries.mass_ratio")
 end
 
 """
@@ -434,15 +450,15 @@ distance_prior(d) = TransformedPrior(positive(d), x -> 5 * log10(x) - 5, y -> ex
 age_prior(x::Real) = log10(x) + 9
 distance_prior(x::Real) = 5 * log10(x) - 5
 
-# Restricts the parameter `p` (a fixed value or a prior) to [lo, hi]: fixed values outside are an error, and priors are
+# Restricts the parameter `p` (a fixed value or a prior) with configuration key `name` to [lo, hi]: fixed values outside are an error, and priors are
 # truncated, in the coordinates of `base` for a TransformedPrior so that the truncation is exact
 function restrict(p::Real, lo, hi, name)
-    lo <= p <= hi || error("Invalid configuration: parameters.$name = $p is outside the valid range [$lo, $hi].")
+    lo <= p <= hi || error("Invalid configuration: $name = $p is outside the valid range [$lo, $hi].")
     return p
 end
 function restrict(p::Distributions.ContinuousUnivariateDistribution, lo, hi, name)
     minimum(p) >= lo && maximum(p) <= hi && return p
-    @info "Truncating the prior on parameters.$name to the valid range [$lo, $hi]."
+    @info "Truncating $name to the valid range [$lo, $hi]."
     if p isa TransformedPrior
         return TransformedPrior(Distributions.truncated(p.base, max(minimum(p.base), p.finv(lo)), min(maximum(p.base), p.finv(hi))), p.f, p.finv, p.logdxdy)
     end
@@ -471,10 +487,10 @@ function parse_parameters(dict, binary_model; background::Bool=true)
         f
     else
         haskey(p, "binary_fraction") || error("Invalid configuration: parameters.binary_fraction is required for binaries.model $(nameof(typeof(binary_model))).")
-        restrict(parse_prior(p["binary_fraction"]), 0, 1, "binary_fraction")
+        restrict(parse_prior(p["binary_fraction"]), 0, 1, "parameters.binary_fraction")
     end
     background_fraction = if background
-        restrict(parse_prior(get(p, "background_fraction", "Uniform(0, 1)")), 0, 1, "background_fraction")
+        restrict(parse_prior(get(p, "background_fraction", "Uniform(0, 1)")), 0, 1, "parameters.background_fraction")
     else
         f = parse_prior(get(p, "background_fraction", 0.0))
         f isa Real && iszero(f) || error("Invalid configuration: data.background: none fixes the background fraction to 0, so parameters.background_fraction must be omitted or 0.")
@@ -488,9 +504,10 @@ function parse_ssp_binaries(dict)
     b = dict["binaries"]
     haskey(b, "binary_fraction") && error("Invalid configuration: for fit_ssp, give the binary fraction as parameters.binary_fraction rather than binaries.binary_fraction.")
     model = strip_whitespace(b["model"])
+    haskey(b, "mass_ratio") && model != "BinaryMassRatio" && error("Invalid configuration: binaries.mass_ratio requires binaries.model BinaryMassRatio.")
     model == "NoBinaries" && return NoBinaries()
     model == "RandomBinaryPairs" && return RandomBinaryPairs(0.0)
-    model == "BinaryMassRatio" && return BinaryMassRatio(0.0) # ponytail: default Uniform(0.1, 1) mass-ratio distribution only, as in parse_binaries
+    model == "BinaryMassRatio" && return BinaryMassRatio(0.0, parse_mass_ratio(b))
     error("Binary model $model unrecognized; valid options are NoBinaries, RandomBinaryPairs, and BinaryMassRatio.")
 end
 
