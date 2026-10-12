@@ -6,6 +6,7 @@ using SFHWorkflows.SFHFitting.Parsing: parse_gates, parse_filter_models, check_f
 import Distributions
 import YAML
 using DelimitedFiles: writedlm
+import Optim
 using OrderedCollections: OrderedDict
 using SFHWorkflows.Simulate: sfh_mass_fractions
 using SFHWorkflows.SFHFitting.Plotting: sparse_mask
@@ -258,13 +259,13 @@ end
     @test read_best(f, "A") == (logAge=9.7, mass=5e5)
     # Convergence of an optimization that converges and of one stopped by its iteration limit
     quad(x) = sum(abs2, x .- (1, 2))
-    ok = optim_status(SFH.Optim.optimize(quad, [0.0, 0.0], SFH.Optim.BFGS()))
+    ok = optim_status(Optim.optimize(quad, [0.0, 0.0], Optim.BFGS()))
     @test ok.converged && ok.iterations > 0 && ok.g_residual < 1e-8
-    stopped = optim_status(SFH.Optim.optimize(x -> sum(abs2, x .- (1, 2)) + x[1]^4, [10.0, 10.0], SFH.Optim.BFGS(), SFH.Optim.Options(iterations=1)))
+    stopped = optim_status(Optim.optimize(x -> sum(abs2, x .- (1, 2)) + x[1]^4, [10.0, 10.0], Optim.BFGS(), Optim.Options(iterations=1)))
     @test !stopped.converged && stopped.iterations == 1 && stopped.termination == "Iterations"
     # A stall that Optim.jl reports as converged (here forced by a large x_abstol) is not converged if the gradient is large
-    stall = SFH.Optim.optimize(x -> 1e6 * (x[1]^2 + 100 * x[2]^2), [10.0, 10.0], SFH.Optim.BFGS(), SFH.Optim.Options(x_abstol=1e3))
-    @test SFH.Optim.converged(stall) && !optim_status(stall).converged
+    stall = Optim.optimize(x -> 1e6 * (x[1]^2 + 100 * x[2]^2), [10.0, 10.0], Optim.BFGS(), Optim.Options(x_abstol=1e3))
+    @test Optim.converged(stall) && !optim_status(stall).converged
 end
 
 splat_call(f, m) = f(m...)
