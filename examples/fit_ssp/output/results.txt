@@ -1,0 +1,5 @@
+# Best fit (highest log posterior density found by the optimizer or the sampler) and 16th, 50th, and 84th percentiles
+# Fixed parameters: 
+# Seed: 1
+name lp_best logAge_best logAge_lower logAge_median logAge_upper MH_best MH_lower MH_median MH_upper dmod_best dmod_lower dmod_median dmod_upper Av_best Av_lower Av_median Av_upper binary_fraction_best binary_fraction_lower binary_fraction_median binary_fraction_upper background_fraction_best background_fraction_lower background_fraction_median background_fraction_upper mass_best age_Gyr_lower age_Gyr_median age_Gyr_upper mass_lower mass_median mass_upper background_stars_lower background_stars_median background_stars_upper logZ ess modes
+PARSEC_YBC -24202.606 9.69829 9.69615 9.69821 9.70021 -1.20300 -1.20859 -1.20275 -1.19706 24.94757 24.94458 24.94790 24.95112 0.10350 0.10040 0.10343 0.10658 2.9015e-01 2.4744e-01 2.9124e-01 3.3774e-01 3.4366e-05 7.1655e-05 2.5364e-04 6.5016e-04 4.9788e+05 4.96762 4.99127 5.01429 4.8894e+05 4.9786e+05 5.0698e+05 2.6833e-01 9.5159e-01 2.4332e+00 -24233.300 2376 1
