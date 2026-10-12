@@ -125,9 +125,12 @@ function templates(tracklib::AbstractTrackLibrary, bclib::AbstractBCGrid,
     # BC tables interpolate only the filters that are used
     bclib = select_filters(bclib, iso_symb)
     # `extinction(logage)` is the distribution of extinction, or `nothing` for extinction Av. Magnitudes are linear in
-    # extinction between the nodes of the BC grid, so isochrones are needed only at its ends and the nodes within it.
-    knots(dist) = isnothing(dist) ? [Av] : let (lo, hi) = extrema(dist)
-        [lo; filter(a -> lo < a < hi, Av_nodes(bclib)); hi]
+    # extinction between the nodes of the BC grid, so isochrones are needed only at the nodes that bracket the support of
+    # the distribution (StarFormationHistories interpolates them to its ends), which are shared by all ages.
+    knots(dist) = isnothing(dist) ? [Av] : let (lo, hi) = extrema(dist), nodes = Av_nodes(bclib)
+        i, j = searchsortedlast(nodes, lo), searchsortedfirst(nodes, hi)
+        (i >= 1 && j <= length(nodes)) || error("The extinctions $lo to $hi of the differential extinction model extend beyond those of the bolometric correction grid, $(first(nodes)) to $(last(nodes)).")
+        nodes[i:j]
     end
     all_knots = unique(reduce(vcat, (knots(extinction(logage)) for logage in unique_logAge)))
     track_MH = extrema(MH(tracklib))

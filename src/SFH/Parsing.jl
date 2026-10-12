@@ -7,7 +7,7 @@ import Distributions
 import YAML
 using OrderedCollections: OrderedDict
 using InitialMassFunctions
-using StarFormationHistories: NoBinaries, RandomBinaryPairs, BinaryMassRatio, MH_from_Z, dMH_dZ, PowerLawMZR, LinearAMR, LogarithmicAMR, GaussianDispersion, snr_magerr, match_extinction
+using StarFormationHistories: NoBinaries, RandomBinaryPairs, BinaryMassRatio, MH_from_Z, dMH_dZ, PowerLawMZR, LinearAMR, LogarithmicAMR, GaussianDispersion, snr_magerr, match_extinction, ExponentialDiskExtinction
 using StellarTracks: PARSECLibrary, MISTv1Library, MISTv2Library, BaSTIv1Library, BaSTIv2Library
 using BolometricCorrections: YBCGrid, MISTv1BCGrid, MISTv2BCGrid
 
@@ -78,18 +78,63 @@ end
 
 """
     parse_extinction(dict)
-Returns a function of `logAge` giving the distribution of the V-band extinction of stars of that age under the model of
-MATCH (`StarFormationHistories.match_extinction`): uniform over `[Av, Av + dAv]` plus an independent uniform
-spread up to `dAvy` for young stars, which tapers from full at age `dAvy_t1` to zero at `dAvy_t2` [Gyr]. The function
-returns `nothing` for ages at which every star has extinction `Av`.
+Returns a function of `logAge` giving the distribution of the V-band extinction of stars of that age, or `nothing` for
+ages at which every star has extinction `properties.Av`. The optional `differential_extinction` section adds, behind the
+foreground screen `Av`, a dust layer of total extinction `dAv` in which the stars are embedded, with stellar to dust
+scale height ratio `scale_height_ratio` (default 1), a fraction `f_red` of the stars behind the dust midplane (default
+0.5), and a log-normal spread of the total extinction across the field of width `dAv_sigma` (default 0); see
+`StarFormationHistories.ExponentialDiskExtinction`. Young stars receive the additional spread `dAvy` of MATCH, which tapers
+from full at age `dAvy_t1` to zero at `dAvy_t2` [Gyr]; see `StarFormationHistories.match_extinction`. With the defaults,
+extinctions are uniform over `[Av, Av + dAv]`, as in MATCH. `dAv` and `scale_height_ratio` may be age tables, lists of
+`[age_Gyr, value]` pairs, interpolated linearly in log age and constant beyond the first and last ages.
 """
 function parse_extinction(dict)
     p = dict["properties"]
-    Av, dAv, dAvy = Float64(p["Av"]), Float64(get(p, "dAv", 0.0)), Float64(get(p, "dAvy", 0.0))
-    t1, t2 = 1e9 * Float64(get(p, "dAvy_t1", 0.04)), 1e9 * Float64(get(p, "dAvy_t2", 0.1))
-    (dAv >= 0 && dAvy >= 0) || error("Invalid configuration: properties.dAv and properties.dAvy must be non-negative.")
-    t1 < t2 || error("Invalid configuration: properties.dAvy_t1 must be less than properties.dAvy_t2.")
-    return logAge -> (dAv > 0 || (dAvy > 0 && exp10(logAge) < t2)) ? match_extinction(Av, dAv, dAvy, logAge; t1, t2) : nothing
+    for k in ("dAv", "dAvy", "dAvy_t1", "dAvy_t2")
+        haskey(p, k) && error("Invalid configuration: properties.$k has moved to the differential_extinction section.")
+    end
+    Av = Float64(p["Av"])
+    de = get(dict, "differential_extinction", nothing)
+    isnothing(de) && return Returns(nothing)
+    keys_de = ("dAv", "scale_height_ratio", "f_red", "dAv_sigma", "dAvy", "dAvy_t1", "dAvy_t2")
+    for k in keys(de)
+        k in keys_de || error("Invalid configuration: unknown key differential_extinction.$k; valid keys are $(join(keys_de, ", ")).")
+    end
+    dAv = parse_age_table(get(de, "dAv", 0.0), "differential_extinction.dAv", >=(0), "non-negative")
+    s = parse_age_table(get(de, "scale_height_ratio", 1.0), "differential_extinction.scale_height_ratio", >(0), "positive")
+    f_red, σ, dAvy = (Float64(get(de, k, v)) for (k, v) in (("f_red", 0.5), ("dAv_sigma", 0.0), ("dAvy", 0.0)))
+    t1, t2 = 1e9 * Float64(get(de, "dAvy_t1", 0.04)), 1e9 * Float64(get(de, "dAvy_t2", 0.1))
+    0 < f_red < 1 || error("Invalid configuration: differential_extinction.f_red must be between 0 and 1.")
+    (σ >= 0 && dAvy >= 0) || error("Invalid configuration: differential_extinction.dAv_sigma and differential_extinction.dAvy must be non-negative.")
+    t1 < t2 || error("Invalid configuration: differential_extinction.dAvy_t1 must be less than differential_extinction.dAvy_t2.")
+    return function (logAge)
+        a, sa = dAv(logAge), s(logAge)
+        young = dAvy > 0 && exp10(logAge) < t2
+        a > 0 || return young ? match_extinction(Av, 0.0, dAvy, logAge; t1, t2) : nothing
+        # MATCH's uniform model is the disk of equal scale heights without offset or spread of the total extinction
+        sa == 1 && f_red == 0.5 && iszero(σ) && return match_extinction(Av, a, dAvy, logAge; t1, t2)
+        return match_extinction(ExponentialDiskExtinction(Av, a, sa; f_red, σ), dAvy, logAge; t1, t2)
+    end
+end
+# A number or a table of [age_Gyr, value] pairs for configuration key `name`, as a function of log10(age [yr]) that
+# interpolates linearly in log age and is constant beyond the first and last ages; every value must satisfy `valid`
+function parse_age_table(v, name, valid, requirement)
+    if v isa Real
+        valid(v) || error("Invalid configuration: $name must be $requirement.")
+        return Returns(Float64(v))
+    end
+    (v isa AbstractVector && !isempty(v) && all(e -> e isa AbstractVector && length(e) == 2 && all(x -> x isa Real, e), v)) ||
+        error("Invalid configuration: $name must be a number or a list of [age_Gyr, value] pairs.")
+    ages, vals = Float64[e[1] for e in v], Float64[e[2] for e in v]
+    (all(>(0), ages) && issorted(ages; lt=<=)) || error("Invalid configuration: the ages of $name must be positive and increasing.")
+    all(valid, vals) || error("Invalid configuration: every value of $name must be $requirement.")
+    la = log10.(ages) .+ 9
+    return function (logAge)
+        logAge <= first(la) && return first(vals)
+        logAge >= last(la) && return last(vals)
+        i = searchsortedlast(la, logAge)
+        return vals[i] + (vals[i+1] - vals[i]) * (logAge - la[i]) / (la[i+1] - la[i])
+    end
 end
 
 function parse_tracks(dict)
@@ -537,6 +582,7 @@ function parse_ssp_config(file::AbstractString)
     return parse_ssp_config(YAML.load_file(file; dicttype=OrderedDict{String, Any}))
 end
 function parse_ssp_config(config::AbstractDict)
+    haskey(config, "differential_extinction") && error("Invalid configuration: differential_extinction is not yet supported by fit_ssp.")
     data = parse_data(config)
     background = parse_background(config)
     binary_model = parse_ssp_binaries(config)

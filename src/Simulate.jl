@@ -211,10 +211,10 @@ function simulate_catalog(config::AbstractDict)
         end
         fitcfg = OrderedDict{String, Any}("data" => data, "imf" => config["imf"], "binaries" => config["binaries"],
                                           "stellartracks" => tracks, "bolometriccorrections" => fit_bcs,
-                                          "properties" => OrderedDict{String, Any}("Av" => Av, (k => props[k] for k in ("dAv", "dAvy", "dAvy_t1", "dAvy_t2") if haskey(props, k))...,
-                                                                                   "distance_modulus" => dmod, "T_max" => T_max),
+                                          "properties" => OrderedDict{String, Any}("Av" => Av, "distance_modulus" => dmod, "T_max" => T_max),
                                           "metallicity" => metallicity, "plotting" => OrderedDict{String, Any}("diagnostics" => true),
                                           "output" => OrderedDict{String, Any}("path" => fitdir, "filename" => "results" * splitext(config["output"]["filename"])[2]))
+        haskey(config, "differential_extinction") && (fitcfg["differential_extinction"] = deepcopy(config["differential_extinction"]))
         # Any fit_sfh section given under `fit` replaces the generated default
         for (k, v) in fit
             k ∈ ("run", "stellar_mass_error", "binning") || (fitcfg[k] = deepcopy(v))
