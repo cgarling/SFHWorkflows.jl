@@ -1,6 +1,6 @@
 name = "SFHWorkflows"
 uuid = "9f162cfb-b9f3-4dd2-bb0f-c8f5cc5047ef"
-version = "1.1.0"
+version = "2.0.0"
 authors = ["cgarling <chris.t.garling@gmail.com> and contributors"]
 
 [deps]
@@ -30,12 +30,12 @@ YAML = "ddb6d928-2868-570f-bddf-ab3f9cf99eb6"
 
 [compat]
 ArgCheck = "2"
-BolometricCorrections = "0.2"
+BolometricCorrections = "0.2.3"
 CSV = "0.10, 1"
 CairoMakie = "0.15"
 DelimitedFiles = "<0.0.1, 1"
 Distributions = "0.25"
-InitialMassFunctions = "0.1"
+InitialMassFunctions = "0.1.7"
 Interpolations = "0.13.4, 0.14, 0.15, 0.16"
 LinearAlgebra = "<0.0.1, 1"
 Logging = "<0.0.1, 1"
@@ -47,16 +47,18 @@ PlotUtils = "1"
 Printf = "<0.0.1, 1"
 SpecialFunctions = "2"
 StableRNGs = "1"
-StarFormationHistories = "1"
+StarFormationHistories = "2"
 StatsBase = "0.34"
-StellarTracks = "1.1"
+StellarTracks = "1.2"
 Test = "<0.0.1, 1"
 TypedTables = "1"
 YAML = "0.4"
 julia = "1.10"
 
 [extras]
+DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+Optim = "429524aa-4258-5aef-a3af-852621145aeb"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test"]
+test = ["DelimitedFiles", "Optim", "Test"]
