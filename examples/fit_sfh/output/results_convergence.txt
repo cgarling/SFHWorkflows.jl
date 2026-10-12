@@ -1,0 +1,13 @@
+name map_converged map_termination map_iterations map_f_calls map_g_residual mle_converged mle_termination mle_iterations mle_f_calls mle_g_residual mle_loglikelihood time
+PARSEC_YBC true GradientNorm 84 206 9.66993e-09 true GradientNorm 122 585 5.77002e-09 -5540.05 317.846
+MISTv1_YBC true GradientNorm 105 272 8.02538e-09 true GradientNorm 121 522 5.27275e-09 -6024.57 316.163
+MISTv2_YBC true GradientNorm 93 254 3.13034e-09 true GradientNorm 120 491 9.91299e-09 -6416.27 288.204
+BaSTIv2_YBC true GradientNorm 163 489 2.79002e-09 true GradientNorm 164 690 8.24716e-09 -6395.88 321.638
+PARSEC_MISTv1 true GradientNorm 64 138 4.60172e-09 true GradientNorm 118 464 1.88509e-09 -5226.44 261.039
+MISTv1_MISTv1 true GradientNorm 102 273 4.42802e-09 true GradientNorm 114 450 3.49522e-09 -6004.06 275.577
+MISTv2_MISTv1 true GradientNorm 86 202 4.28649e-09 true NoObjectiveChange 112 450 8.20179e-08 -5725.53 283.798
+BaSTIv2_MISTv1 true GradientNorm 101 270 1.83987e-09 true GradientNorm 123 465 7.42525e-09 -5723.02 294.849
+PARSEC_MISTv2 true GradientNorm 83 201 6.69759e-09 true GradientNorm 126 556 5.98918e-09 -5851.18 243.212
+MISTv1_MISTv2 true GradientNorm 170 470 3.92508e-09 true NoObjectiveChange 96 370 1.03516e-06 -6438.81 281.595
+MISTv2_MISTv2 true GradientNorm 81 201 3.26839e-09 true GradientNorm 124 460 8.06401e-09 -6811.86 157.956
+BaSTIv2_MISTv2 true GradientNorm 150 404 9.96716e-09 true GradientNorm 121 447 4.00244e-09 -6684.07 205.841
