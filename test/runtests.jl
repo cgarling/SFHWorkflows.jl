@@ -5,6 +5,7 @@ using SFHWorkflows.SFHFitting.Parsing: parse_gates, parse_filter_models, check_f
     parse_ssp_config, parse_ssp_binaries
 import Distributions
 import YAML
+using DelimitedFiles: writedlm
 using OrderedCollections: OrderedDict
 using SFHWorkflows.Simulate: sfh_mass_fractions
 using SFHWorkflows.SFHFitting.Plotting: sparse_mask
@@ -70,8 +71,9 @@ end
 end
 
 @testset "parse_extinction" begin
-    cfg(p) = Dict("properties" => merge(Dict{String, Any}("Av" => 0.2), p))
-    @test isnothing(parse_extinction(cfg(Dict()))(7.0))
+    cfg(de) = Dict{String, Any}("properties" => Dict{String, Any}("Av" => 0.2), "differential_extinction" => de)
+    @test isnothing(parse_extinction(Dict("properties" => Dict("Av" => 0.2)))(7.0))
+    # The defaults give the uniform model of MATCH
     e = parse_extinction(cfg(Dict("dAv" => 0.5, "dAvy" => 0.3)))
     @test e(9.0) == Distributions.Uniform(0.2, 0.7)
     @test all(extrema(e(7.0)) .≈ (0.2, 1.0))
@@ -79,8 +81,27 @@ end
     e = parse_extinction(cfg(Dict("dAvy" => 0.3, "dAvy_t2" => 0.2)))
     @test isnothing(e(log10(2e8)))
     @test e(log10(1.5e8)) ≈ Distributions.Uniform(0.2, 0.2 + 0.3 * 0.5 / 1.6)
+    # Other scale height ratios, offsets, or spreads of the total extinction give the exponential disk model, to which
+    # young stars add dAvy
+    e = parse_extinction(cfg(Dict("dAv" => 0.5, "scale_height_ratio" => 3, "f_red" => 0.7, "dAv_sigma" => 0.3, "dAvy" => 0.2)))
+    @test e(9.0) == SFH.ExponentialDiskExtinction(0.2, 0.5, 3.0; f_red=0.7, σ=0.3)
+    @test e(7.0) isa SFH.UniformConvolution && e(7.0).base == e(9.0) && e(7.0).w == 0.2
+    # Age tables, interpolated linearly in log age and constant beyond their ends
+    e = parse_extinction(cfg(Dict("dAv" => [[0.01, 1.0], [1.0, 0.4]], "scale_height_ratio" => [[0.09, 1.0], [0.11, 20.0]])))
+    @test e(7.0) == Distributions.Uniform(0.2, 1.2)
+    @test e(8.5) ≈ SFH.ExponentialDiskExtinction(0.2, 1.0 - 0.6 * 0.75, 20.0)
+    @test e(10.0) == SFH.ExponentialDiskExtinction(0.2, 0.4, 20.0)
+    @test e(log10(1e8)).s ≈ 1 + 19 * log10(1e8 / 9e7) / log10(11 / 9)
+    @test isnothing(parse_extinction(cfg(Dict("dAv" => [[0.1, 0.5], [1.0, 0.0]])))(10.0))
     @test_throws "must be non-negative" parse_extinction(cfg(Dict("dAv" => -0.1)))
+    @test_throws "every value of differential_extinction.dAv must be non-negative" parse_extinction(cfg(Dict("dAv" => [[0.1, 0.5], [1.0, -0.1]])))
+    @test_throws "must be positive and increasing" parse_extinction(cfg(Dict("scale_height_ratio" => [[1.0, 2.0], [0.1, 1.0]])))
+    @test_throws "a list of [age_Gyr, value] pairs" parse_extinction(cfg(Dict("dAv" => [0.1, 0.5])))
+    @test_throws "scale_height_ratio must be positive" parse_extinction(cfg(Dict("scale_height_ratio" => 0)))
+    @test_throws "f_red must be between 0 and 1" parse_extinction(cfg(Dict("f_red" => 1)))
     @test_throws "dAvy_t1 must be less" parse_extinction(cfg(Dict("dAvy_t1" => 0.2)))
+    @test_throws "unknown key differential_extinction.dAV" parse_extinction(cfg(Dict("dAV" => 0.5)))
+    @test_throws "properties.dAv has moved to the differential_extinction section" parse_extinction(Dict("properties" => Dict("Av" => 0.2, "dAv" => 0.5)))
 end
 
 @testset "check_filter_models" begin
@@ -203,6 +224,8 @@ end
     cfg["sampling"]["is_rounds"] = 3
     cfg["sampling"]["pilot_walkers"] = 7
     @test_throws "pilot_walkers must be even" parse_ssp_config(cfg)
+    cfg["differential_extinction"] = OrderedDict{String, Any}("dAv" => 0.5)
+    @test_throws "differential_extinction is not yet supported by fit_ssp" parse_ssp_config(cfg)
 end
 
 @testset "sfh_mass_fractions" begin
@@ -242,4 +265,30 @@ end
     # A stall that Optim.jl reports as converged (here forced by a large x_abstol) is not converged if the gradient is large
     stall = SFH.Optim.optimize(x -> 1e6 * (x[1]^2 + 100 * x[2]^2), [10.0, 10.0], SFH.Optim.BFGS(), SFH.Optim.Options(x_abstol=1e3))
     @test SFH.Optim.converged(stall) && !optim_status(stall).converged
+end
+
+splat_call(f, m) = f(m...)
+splat_allocs(f, m) = (splat_call(f, m); @allocated splat_call(f, m))
+@testset "observational_models are type-stable" begin
+    # The joint models are called for every point of every template, so their results must infer
+    dir = mktempdir()
+    n = 20000
+    m1, m2 = 20 .+ 8 .* rand(n), 19.5 .+ 8 .* rand(n)
+    σ(m) = 0.01 + 0.3 * exp((m - 28) / 1.5)
+    d1, d2 = σ.(m1) .* randn(n), σ.(m2) .* randn(n)
+    lost = rand(n) .> 1 ./ (1 .+ exp.((max.(m1, m2 .+ 0.5) .- 26.5) ./ 0.4))
+    d1[lost] .= 99.999
+    d2[lost] .= 99.999
+    writedlm(joinpath(dir, "asts.dat"), [m1 m2 d1 d2], ' ')
+    third = parse_filter_models(Dict("filters" => Dict("C" => Dict("mag" => [20.0, 28.0], "snr" => [200.0, 3.0]))))
+    for (ystring, xstrings, models) in (("B", ["A", "B"], Dict{String, NamedTuple}()), ("B", ["A", "C"], third), ("C", ["A", "B"], third))
+        c, b, e = SFHWorkflows.SFHFitting.observational_models(xstrings, ystring, joinpath(dir, "asts.dat"), ["A", "B"], models;
+                                                               badval=99.999, minerr=0.0, maxerr=0.2, plot_diagnostics=false, output_path=dir)
+        m = ystring in xstrings ? (24.0, 23.0) : (24.0, 23.0, 23.5)
+        @test (@inferred c(m...)) isa Float64
+        @test (@inferred b(m...)) isa NTuple{length(m), Float64}
+        @test (@inferred e(m...)) isa NTuple{length(m), Float64}
+        # Closures over (m...) are not specialized on the number of magnitudes and allocate on every call
+        @test all(splat_allocs(f, m) == 0 for f in (c, b, e))
+    end
 end

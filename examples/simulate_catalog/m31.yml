@@ -29,6 +29,8 @@ properties:
   stellar_mass: 3.44e6 # About 2000 stars in the fit region and ~550 with 21.5 < F814W < 23 (see sfh)
   distance_modulus: 24.47
   Av: 0.4
+
+differential_extinction:
   dAv: 1.0 # Extinction of each star uniform from Av to Av + dAv, as Wainer et al.
 
 sfh:

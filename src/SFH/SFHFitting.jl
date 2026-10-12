@@ -81,10 +81,14 @@ function observational_models(xstrings, ystring, astfile, ast_filters, filter_mo
     # Joint models of the magnitudes in `mag_order`: the AST models of the two AST filters, combined with the
     # per-filter models of any other filter
     ia, ib = (findfirst(==(f), mag_order) for f in ast_filters)
-    other = [(k, models[mag_order[k]]) for k in eachindex(mag_order) if k ∉ (ia, ib)]
-    completeness = (m...) -> asts.completeness(m[ia], m[ib]) * prod(o.completeness(m[k]) for (k, o) in other; init=1.0)
-    joint(f, g) = (m...) -> (a = f(m[ia], m[ib]); ntuple(k -> k == ia ? a[1] : k == ib ? a[2] : getproperty(models[mag_order[k]], g)(m[k]), length(m)))
-    return completeness, joint(asts.bias, :bias), joint(asts.err, :err)
+    # The third filter, if any, has a per-filter model `o`. These are called for every point of every template, so the
+    # closures capture only concretely typed values and declare `Vararg{Any, N}`, which forces specialization on the
+    # number of magnitudes; with `(m...)` every call allocates.
+    ko = findfirst(k -> k ∉ (ia, ib), eachindex(mag_order))
+    o = isnothing(ko) ? nothing : models[mag_order[ko]]
+    completeness = ((m::Vararg{Any, N}) where {N}) -> asts.completeness(m[ia], m[ib]) * (isnothing(o) ? 1.0 : o.completeness(m[ko]))
+    joint(f, of) = ((m::Vararg{Any, N}) where {N}) -> (a = f(m[ia], m[ib]); ntuple(k -> k == ia ? a[1] : k == ib ? a[2] : of(m[k]), N))
+    return completeness, joint(asts.bias, isnothing(o) ? nothing : o.bias), joint(asts.err, isnothing(o) ? nothing : o.err)
 end
 
 # Merges the artificial star test diagnostics written by `observational_models` and the completeness over the Hess

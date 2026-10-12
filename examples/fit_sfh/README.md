@@ -28,7 +28,28 @@ Then update `properties` (distance modulus, extinction, and an approximate stell
  - `BinaryMassRatio`: the IMF gives the total mass of each system, so a system IMF such as `Chabrier2003System` is the natural choice. A binary splits its mass between two stars with a secondary-to-primary mass ratio drawn from `binaries.mass_ratio`, a distribution written as in [Distributions.jl](https://juliastats.org/Distributions.jl/stable/univariate/), e.g., `Beta(2, 2)` (default `Uniform(0.1, 1)`). Distributions extending outside [0, 1], e.g., `Normal(0.5, 0.25)`, are truncated to [0, 1].
 
 ## Differential extinction
-By default every star has extinction `properties.Av`. Set `properties.dAv` to spread the extinction of all stars uniformly from `Av` to `Av + dAv`, as the `-dAv` option of MATCH does, and `properties.dAvy` for an additional, independent uniform spread from 0 to `dAvy` for young stars, as `-dAvy` does (MATCH's default is 0.5). The young-star spread is full for ages below `properties.dAvy_t1` and tapers linearly to zero at `properties.dAvy_t2` (in Gyr; defaults 0.04 and 0.1, as in MATCH). `dAv` and `dAvy` are fixed, not fit; to choose them, compare the best fit over a few values. The templates follow each star along its reddening vector, so the extinctions `Av + dAv + dAvy` must be within the range of every bolometric correction grid. Templates with differential extinction take several times longer to build than those without.
+By default every star has extinction `properties.Av`, e.g., from the Milky Way foreground. The optional `differential_extinction` section adds a layer of dust within the galaxy, so that each star also receives the extinction of the part of the layer in front of it:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `dAv` | 0 | Total extinction through the dust layer. With the other defaults, extinctions are uniform from `Av` to `Av + dAv`, as with the `-dAv` option of MATCH. |
+| `scale_height_ratio` | 1 | Scale height of the stars divided by that of the dust, both with exponential vertical profiles. At 1, stars and dust are perfectly mixed, giving the uniform distribution above. Below 1, the stars are embedded in the dust and most have about half of `dAv`. Above 1, most stars are either in front of or behind the dust, approaching a thin dust layer, with extinctions near `Av` and `Av + dAv`. |
+| `f_red` | 0.5 | Fraction of the stars behind the midplane of the dust. |
+| `dAv_sigma` | 0 | Width of a log-normal spread of the total extinction of the layer across the observed field, in natural log; `dAv` is then its median. It is truncated 3σ above the median, so extinctions reach `Av + dAv exp(3 dAv_sigma)`. |
+| `dAvy` | 0 | An additional, independent uniform spread from 0 to `dAvy` for young stars, as the `-dAvy` option of MATCH (MATCH's default is 0.5). It is full for ages below `dAvy_t1` and tapers linearly to zero at `dAvy_t2`. |
+| `dAvy_t1`, `dAvy_t2` | 0.04, 0.1 | Ages [Gyr] bounding the taper of `dAvy`, as in MATCH. |
+
+`dAv` and `scale_height_ratio` can also depend on age, given as a list of `[age_Gyr, value]` pairs, interpolated linearly in log age and constant before the first and after the last age. For example, young stars embedded in the dust and older stars in a thicker disk than the dust:
+```yaml
+differential_extinction:
+  dAv: 1.0
+  scale_height_ratio: [[0.09, 1.0], [0.11, 20.0]]
+```
+A table of `dAv` with `scale_height_ratio: 1` instead gives uniform distributions whose width changes with age, e.g., for young stars that lie in dustier parts of the field than old stars. A varying scale height ratio changes the shape of the distribution of extinctions but not its range or (for `f_red = 0.5`) its mean, while a varying `dAv` changes its range and mean.
+
+These are the parameters of the `-diskav` model of MATCH as described by [Williams et al. (2017)](https://ui.adsabs.harvard.edu/abs/2017ApJ...846..145W): `Av` is its foreground extinction, `dAv`, `dAv_sigma`, and `f_red` are the median and width of the log-normal extinction and the reddened fraction that [Dalcanton et al. (2015)](https://ui.adsabs.harvard.edu/abs/2015ApJ...814....3D) measured in M31, and a two-entry table of `scale_height_ratio` gives its scale height ratios of young and old stars and their transition age (Williams et al. used 20 for old stars and a transition at 0.1 Gyr). MATCH's exact functional form is not published, so this is a physically consistent realization of that model, not necessarily identical to it.
+
+The parameters are fixed, not fit; to choose them, compare the best fit over a few values. The templates follow each star along its reddening vector, so the largest extinction must be within the range of every bolometric correction grid. Templates with differential extinction take several times longer to build than those without, and those with `dAv_sigma` (which also cover a wider range of extinction) about twice as long again.
 
 Fitting every combination of stellar track library and bolometric correction grid takes a while. For a quicker first run, comment out all but one entry under `stellartracks` and `bolometriccorrections`.
 

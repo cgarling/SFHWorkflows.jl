@@ -30,6 +30,8 @@ properties:
   stellar_mass: 3.44e6
   distance_modulus: 24.47
   Av: 0.4
+
+differential_extinction:
   dAv: 1.0
 
 sfh:

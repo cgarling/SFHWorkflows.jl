@@ -55,9 +55,10 @@ imf:
 binaries:
   # Valid models: NoBinaries, RandomBinaryPairs, BinaryMassRatio (binary_fraction required for the latter two;
   # BinaryMassRatio draws the secondary-to-primary mass ratio from mass_ratio, e.g., mass_ratio: Beta(2, 2), default Uniform(0.1, 1))
-  # model: RandomBinaryPairs
-  # binary_fraction: 0.4
-  model: NoBinaries
+  model: BinaryMassRatio
+  binary_fraction: 0.4
+  mass_ratio: Uniform(0.1, 1)
+  # model: NoBinaries
 
 stellartracks:
   # One entry per stellar track library you want to run the SFH fit with.
@@ -110,12 +111,16 @@ bolometriccorrections:
     filterset: acs_wfc
 
 properties:
-  Av: 0.13466152995504851 # V-band extinction
-  # dAv: 0.0  # Optional; spread of extinction, uniform from Av to Av + dAv, as MATCH -dAv. Default 0
-  # dAvy: 0.0 # Optional; extra spread for young stars, as MATCH -dAvy (see README). Default 0
+  Av: 0.13466152995504851 # V-band extinction of every star, e.g., from the Milky Way foreground
   distance_modulus: 24.95
   Mstar: 2.6e6 # Stellar mass to set normalization of initial SFH guess; order-of-magnitude
   T_max: 13.7 # Optional; lookback time [Gyr] when star formation begins (right edge of the oldest logAge bin, and T_max of the AMRs). Default 13.7
+
+# Optional; extinction that differs among stars, from dust within the galaxy, in addition to Av (see README)
+# differential_extinction:
+#   dAv: 0.5       # Extinction through the dust; with the defaults below, uniform from Av to Av + dAv, as MATCH -dAv
+#   dAvy: 0.0      # Optional; extra spread for young stars, as MATCH -dAvy. Default 0
+#   scale_height_ratio: 1.0 # Optional; scale height of the stars relative to the dust. Default 1
 
 metallicity: # Options are LinearAMR, LogarithmicAMR, PowerLawMZR, examples below
   name: PowerLawMZR # [M/H] = alpha * (log10(M_*(t)) - log10(mstar0)) + beta

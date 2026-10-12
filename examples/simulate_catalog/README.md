@@ -2,7 +2,7 @@
 
 This example simulates HST ACS/WFC and Roman photometry of a dwarf irregular galaxy similar to Aquarius or Leo A, at a distance modulus of 24.95, with 2 million solar masses of stars formed. Star formation is low before 8 Gyr ago, rises between 8 and 4 Gyr ago, and continues until 100 Myr ago, the youngest age in the grid. The catalog is mock-observed in F475W, F606W, and F814W using tabulated signal-to-noise ratio curves, and then fit with `fit_sfh` in F814W vs. F475W - F814W to check how well the input SFH is recovered. It needs no external data.
 
-Note that with `dAv` or `dAvy`, `properties.absolute_magnitude` (used instead of `stellar_mass`) is the integrated magnitude of the population at extinction `Av`, before the spread is applied, so the simulated catalog is fainter than `absolute_magnitude`.
+Note that with `differential_extinction`, `properties.absolute_magnitude` (used instead of `stellar_mass`) is the integrated magnitude of the population at extinction `Av`, before the spread is applied, so the simulated catalog is fainter than `absolute_magnitude`.
 
 See [the examples README](../README.md) for how to download and run the examples.
 
