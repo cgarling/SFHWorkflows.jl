@@ -289,7 +289,8 @@ splat_allocs(f, m) = (splat_call(f, m); @allocated splat_call(f, m))
         @test (@inferred c(m...)) isa Float64
         @test (@inferred b(m...)) isa NTuple{length(m), Float64}
         @test (@inferred e(m...)) isa NTuple{length(m), Float64}
-        # Closures over (m...) are not specialized on the number of magnitudes and allocate on every call
-        @test all(splat_allocs(f, m) == 0 for f in (c, b, e))
+        # Closures over (m...) are not specialized on the number of magnitudes and allocate on every call;
+        # splatted calls only measure allocation-free on Julia >= 1.12
+        VERSION >= v"1.12" && @test all(splat_allocs(f, m) == 0 for f in (c, b, e))
     end
 end
