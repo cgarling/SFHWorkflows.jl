@@ -8,6 +8,7 @@ See [the examples README](../README.md) for how to download and run the examples
  - `simulate.yml`: the `simulate_catalog` configuration for the cluster. See the [`simulate_catalog` example](../simulate_catalog) for every option.
  - `config.yml`: the `fit_ssp` configuration.
  - `fit_ssp.jl`: simulates the cluster, writes the detected stars to `results/simulation/phot.dat`, runs `fit_ssp` on `config.yml`, and makes the figures below.
+ - `output/`: example output files of the fit (`results.txt` and the mode and sample files), described under [Output](#output).
  - [`bimodal/`](bimodal): a second example, which fits a catalog of two populations whose posterior has two modes.
 
 ## How the fit works
