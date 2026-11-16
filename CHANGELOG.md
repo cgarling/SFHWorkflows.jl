@@ -1,5 +1,13 @@
 # Changelog
 
+## Version v2.1.0 -- 2026-11-16
+
+### Upgrade Instructions
+ - Per-filter observational models (`data.filters` and `mockobservations.filters`) whose `mag` repeats a magnitude now raise an error. Previously the repeated rows were silently dropped during interpolation, so which value was used was undefined; remove the duplicates from the table.
+
+### New features
+ - The per-filter observational models (`data.filters` in `fit_sfh`, `mockobservations.filters` in `simulate_catalog`) accept a completeness tabulated at the magnitudes of the signal-to-noise ratio or magnitude error curve (`completeness: [...]`), as an alternative to the parametric function of the signal-to-noise ratio (`completeness: {snr50, width}`). It is interpolated linearly, held constant brighter than the table, and extrapolated linearly fainter than it until it reaches zero, so it must decrease between the two faintest magnitudes.
+
 ## Version v2.0.0 -- 2026-10-11
 Requires StarFormationHistories.jl v2, StellarTracks.jl v1.2, BolometricCorrections.jl v0.2.3, InitialMassFunctions.jl v0.1.7
 

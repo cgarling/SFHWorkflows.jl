@@ -18,6 +18,9 @@ data:
   #   # log10(SNR) is interpolated linearly in magnitude, and SNR must not increase toward fainter magnitudes.
   #   # Error is max(minerr, 1.0857 / SNR), held at its value past either end of the table.
   #   # Bias is interpolated linearly from `bias` (default 0).
+  #   # A star's completeness is the product of its completeness in each filter, assuming independent detections.
+  #   # Artificial stars are usually recovered or lost in all filters together, so per-filter completenesses
+  #   # measured from them overestimate the incompleteness; give such ASTs under `ASTs` instead.
   #   F606W:
   #     mag: [20.0, 25.0, 26.0, 27.0, 27.5, 28.0, 28.5, 29.0]
   #     snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97] # Give exactly one of snr or mag_err
