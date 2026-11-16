@@ -183,7 +183,7 @@ end
 """
     (completeness, bias, err) = snr_model(mag, snr; bias=nothing, completeness=nothing, minerr=0, snr50=5, width=1)
 Returns completeness, bias, and photometric error functions of apparent magnitude for a filter whose signal-to-noise
-ratio `snr` is tabulated at apparent magnitudes `mag`. `log10(snr)` is interpolated linearly in magnitude. If
+ratio `snr` is tabulated at distinct apparent magnitudes `mag`. `log10(snr)` is interpolated linearly in magnitude. If
 `completeness` gives its value at each of `mag`, it is interpolated linearly, held constant brighter than the table, and
 extrapolated linearly (clamped to [0, 1]) fainter than the table, so it must decrease between the two faintest
 magnitudes. Otherwise the completeness is `0.5 * (1 + erf((SNR - snr50) / (sqrt(2) * width)))`, with `log10(snr)`
@@ -193,6 +193,9 @@ zero unless `bias` gives its value at each of `mag`, in which case it is interpo
 """
 function snr_model(mag, snr; bias=nothing, completeness=nothing, minerr::Number=0, snr50::Number=5, width::Number=1)
     @argcheck length(mag) == length(snr) >= 2
+    # Interpolations would silently drop rows with repeated magnitudes, and the faint-end checks below would compare
+    # two values at the same magnitude
+    @argcheck allunique(mag) "Tabulated magnitudes `mag` must not repeat."
     @argcheck isnothing(bias) || length(bias) == length(mag) "`bias` must have one value per entry of `mag`."
     @argcheck all(>(0), snr) "All tabulated SNR values must be positive."
     @argcheck width > 0

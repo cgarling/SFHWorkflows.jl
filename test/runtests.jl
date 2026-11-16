@@ -31,6 +31,7 @@ using Test
     @test_throws "must not increase toward fainter" snr_model([20.0, 25.0, 26.0], [100.0, 10.0, 20.0])
     @test_throws "between the two faintest" snr_model([20.0, 25.0, 26.0], [100.0, 10.0, 10.0])
     @test_throws "must be positive" snr_model([20.0, 25.0], [100.0, 0.0])
+    @test_throws "must not repeat" snr_model([20.0, 25.0, 25.0], [100.0, 10.0, 5.0])
     bias = snr_model([25.0, 20.0], [10.0, 100.0]; bias=[-0.02, 0.0]).bias
     @test (bias(22.5), bias(19.0), bias(30.0)) == (-0.01, 0.0, -0.02) # Linear inside the table, constant outside
     @test_throws "one value per entry of `mag`" snr_model([20.0, 25.0], [100.0, 10.0]; bias=[0.0])
