@@ -34,6 +34,14 @@ using Test
     bias = snr_model([25.0, 20.0], [10.0, 100.0]; bias=[-0.02, 0.0]).bias
     @test (bias(22.5), bias(19.0), bias(30.0)) == (-0.01, 0.0, -0.02) # Linear inside the table, constant outside
     @test_throws "one value per entry of `mag`" snr_model([20.0, 25.0], [100.0, 10.0]; bias=[0.0])
+    # Tabulated completeness: constant brighter than the table, linear fall to zero past the faint end
+    c = snr_model([26.0, 20.0, 25.0], [5.0, 100.0, 10.0]; completeness=[0.6, 1.0, 0.9], snr50=50.0).completeness
+    @test c.([19.0, 22.5, 25.5, 27.0, 30.0]) ≈ [1.0, 0.95, 0.75, 0.3, 0.0]
+    # The faint-end SNR check only constrains the erf model
+    @test snr_model([20.0, 25.0, 26.0], [100.0, 10.0, 10.0]; completeness=[1.0, 0.9, 0.5]).completeness(26.0) == 0.5
+    @test_throws "one value per entry of `mag`" snr_model([20.0, 25.0], [100.0, 10.0]; completeness=[1.0])
+    @test_throws "lie in [0, 1]" snr_model([20.0, 25.0], [100.0, 10.0]; completeness=[1.1, 0.5])
+    @test_throws "completeness must decrease between the two faintest" snr_model([25.0, 20.0, 26.0], [10.0, 100.0, 5.0]; completeness=[0.5, 1.0, 0.5])
 end
 
 @testset "fill_nan" begin
@@ -45,7 +53,9 @@ end
 @testset "parse_filter_models" begin
     @test isempty(parse_filter_models(Dict()))
     d = Dict("filters" => Dict("F606W" => Dict("mag" => [20, 25], "snr" => [100, 10])))
-    @test parse_filter_models(d)["F606W"] == (mag=[20.0, 25.0], snr=[100.0, 10.0], bias=nothing, minerr=0.0, snr50=5.0, width=1.0)
+    @test parse_filter_models(d)["F606W"] == (mag=[20.0, 25.0], snr=[100.0, 10.0], bias=nothing, completeness=nothing, minerr=0.0, snr50=5.0, width=1.0)
+    d = Dict("filters" => Dict("F606W" => Dict("mag" => [20, 25], "snr" => [100, 10], "completeness" => [1, 0.5])))
+    @test parse_filter_models(d)["F606W"].completeness == [1.0, 0.5]
     d = Dict("filters" => Dict("F606W" => Dict("mag" => [20, 25], "mag_err" => [0.01, 0.1], "bias" => [0, -0.02], "minerr" => 0.02, "completeness" => Dict("snr50" => 3, "width" => 0.5))))
     m = parse_filter_models(d)["F606W"]
     @test m.snr ≈ SFH.snr_magerr.([0.01, 0.1])

@@ -74,7 +74,7 @@ function observational_models(xstrings, ystring, astfile, ast_filters, filter_mo
     # Isochrone magnitudes are ordered this way by Systematics.iso_filters; models must match
     mag_order = ystring in xstrings ? xstrings : [ystring; xstrings]
     Parsing.check_filter_models(mag_order, ast_filters, keys(filter_models))
-    models = Dict(name => snr_model(s.mag, s.snr; s.bias, s.minerr, s.snr50, s.width) for (name, s) in filter_models)
+    models = Dict(name => snr_model(s.mag, s.snr; s.bias, s.completeness, s.minerr, s.snr50, s.width) for (name, s) in filter_models)
     isnothing(astfile) && return Tuple([getproperty(models[f], k) for f in mag_order] for k in (:completeness, :bias, :err))
     @argcheck length(ast_filters) == 2
     asts = process_ast_file(astfile, ast_filters, badval, minerr, maxerr, plot_diagnostics, output_path)

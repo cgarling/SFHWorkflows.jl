@@ -15,18 +15,22 @@ data:
     maxerr: 0.25   # maximum photometric error to allow in model
   # filters:
   #   # Per-filter models from a tabulated SNR(mag) or mag_err(mag) curve in apparent magnitudes.
-  #   # log10(SNR) is interpolated linearly in magnitude. Past the faint end of the table, completeness keeps
-  #   # falling as if log10(SNR) were extrapolated linearly, while the error is held at its value at the end.
-  #   # SNR must not increase toward fainter magnitudes and must fall between the two faintest points.
-  #   # Error is max(minerr, 1.0857 / SNR); bias is interpolated linearly from `bias` (default 0).
+  #   # log10(SNR) is interpolated linearly in magnitude, and SNR must not increase toward fainter magnitudes.
+  #   # Error is max(minerr, 1.0857 / SNR), held at its value past either end of the table.
+  #   # Bias is interpolated linearly from `bias` (default 0).
   #   F606W:
   #     mag: [20.0, 25.0, 26.0, 27.0, 27.5, 28.0, 28.5, 29.0]
   #     snr: [420.95, 64.52, 34.26, 16.35, 10.91, 7.16, 4.63, 2.97] # Give exactly one of snr or mag_err
   #     bias: [0.0, 0.0, 0.0, -0.005, -0.01, -0.02, -0.03, -0.04] # Optional; <out> - <in> at each mag, default 0
   #     minerr: 0.01 # Optional error floor; default 0
+  #     # Past the faint end of the table, this completeness keeps falling as if log10(SNR) were extrapolated
+  #     # linearly, so SNR must fall between the two faintest points.
   #     completeness: # Optional; 0.5 * (1 + erf((SNR - snr50) / (sqrt(2) * width)))
   #       snr50: 5.0
   #       width: 1.0
+  #     # Or tabulate completeness at each mag instead; interpolated linearly, constant brighter than the table and
+  #     # extrapolated linearly to zero fainter than it, so it must decrease between the two faintest points.
+  #     # completeness: [1.0, 1.0, 0.95, 0.90, 0.75, 0.5, 0.25, 0.05]
   binning:
     # range(a, b; length=c) gives uniform range from a to b with number of steps = c
     ybins: range(20.5, 28.0; length=150)
