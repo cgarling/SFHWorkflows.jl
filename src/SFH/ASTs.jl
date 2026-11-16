@@ -181,30 +181,41 @@ function process_ast_file(astfile::AbstractString, filters, badval::Number, mine
 end
 
 """
-    (completeness, bias, err) = snr_model(mag, snr; bias=nothing, minerr=0, snr50=5, width=1)
+    (completeness, bias, err) = snr_model(mag, snr; bias=nothing, completeness=nothing, minerr=0, snr50=5, width=1)
 Returns completeness, bias, and photometric error functions of apparent magnitude for a filter whose signal-to-noise
-ratio `snr` is tabulated at apparent magnitudes `mag`. `log10(snr)` is interpolated linearly in magnitude. The
-completeness is `0.5 * (1 + erf((SNR - snr50) / (sqrt(2) * width)))`, with `log10(snr)` extrapolated linearly beyond
-the table so the completeness keeps falling past the faint end. The error is
+ratio `snr` is tabulated at apparent magnitudes `mag`. `log10(snr)` is interpolated linearly in magnitude. If
+`completeness` gives its value at each of `mag`, it is interpolated linearly, held constant brighter than the table, and
+extrapolated linearly (clamped to [0, 1]) fainter than the table, so it must decrease between the two faintest
+magnitudes. Otherwise the completeness is `0.5 * (1 + erf((SNR - snr50) / (sqrt(2) * width)))`, with `log10(snr)`
+extrapolated linearly beyond the table so the completeness keeps falling past the faint end. The error is
 `max(minerr, StarFormationHistories.magerr_snr(SNR))` and, like the bias, is held constant beyond the table. The bias is
 zero unless `bias` gives its value at each of `mag`, in which case it is interpolated linearly.
 """
-function snr_model(mag, snr; bias=nothing, minerr::Number=0, snr50::Number=5, width::Number=1)
+function snr_model(mag, snr; bias=nothing, completeness=nothing, minerr::Number=0, snr50::Number=5, width::Number=1)
     @argcheck length(mag) == length(snr) >= 2
     @argcheck isnothing(bias) || length(bias) == length(mag) "`bias` must have one value per entry of `mag`."
     @argcheck all(>(0), snr) "All tabulated SNR values must be positive."
     @argcheck width > 0
     p = sortperm(mag)
-    # Linear extrapolation past the faint end must keep SNR falling, or completeness would rise again
     @argcheck issorted(snr[p]; rev=true) "Tabulated SNR must not increase toward fainter magnitudes."
-    @argcheck snr[p[end]] < snr[p[end-1]] "Tabulated SNR must decrease between the two faintest magnitudes."
     logsnr = extrapolate(interpolate((mag[p],), log10.(snr[p]), Gridded(Linear())), Line())
-    completeness(m) = (1 + erf((exp10(logsnr(m)) - snr50) / (sqrt(2) * width))) / 2
+    if isnothing(completeness)
+        # Linear extrapolation past the faint end must keep SNR falling, or completeness would rise again
+        @argcheck snr[p[end]] < snr[p[end-1]] "Tabulated SNR must decrease between the two faintest magnitudes."
+        compfunc = m -> (1 + erf((exp10(logsnr(m)) - snr50) / (sqrt(2) * width))) / 2
+    else
+        @argcheck length(completeness) == length(mag) "`completeness` must have one value per entry of `mag`."
+        @argcheck all(c -> 0 <= c <= 1, completeness) "Tabulated completeness values must lie in [0, 1]."
+        # The faint-end extrapolation follows the last segment, which must fall so completeness reaches zero
+        @argcheck completeness[p[end]] < completeness[p[end-1]] "Tabulated completeness must decrease between the two faintest magnitudes."
+        citp = extrapolate(interpolate((mag[p],), Float64.(completeness[p]), Gridded(Linear())), ((Flat(), Line()),))
+        compfunc = m -> clamp(citp(m), 0, 1)
+    end
     # Errors extrapolated with the SNR would grow without bound (hundreds of mag for stars far below the detection
     # limit), making their template kernels cover the whole Hess diagram
     err(m) = max(minerr, SFH.magerr_snr(exp10(logsnr(clamp(m, mag[p[begin]], mag[p[end]])))))
     biasfunc = isnothing(bias) ? zero : extrapolate(interpolate((mag[p],), Float64.(bias[p]), Gridded(Linear())), Flat())
-    return (completeness = completeness, bias = biasfunc, err = err)
+    return (completeness = compfunc, bias = biasfunc, err = err)
 end
 
 end # module

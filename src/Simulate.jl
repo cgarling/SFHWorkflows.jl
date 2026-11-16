@@ -170,7 +170,7 @@ function simulate_catalog(config::AbstractDict)
         error("Invalid configuration: filter $f has both an AST model and a per-filter `filters` model in mockobservations; give only one.")
     end
     models = Any[(filters=[f], model=(completeness=(m.completeness,), err=(m.err,), bias=(m.bias,)))
-              for (f, m) in ((f, snr_model(s.mag, s.snr; s.bias, s.minerr, s.snr50, s.width)) for (f, s) in filter_models)]
+              for (f, m) in ((f, snr_model(s.mag, s.snr; s.bias, s.completeness, s.minerr, s.snr50, s.width)) for (f, s) in filter_models)]
     if !isnothing(asts)
         model = process_ast_file(asts["ast_file"], ast_filters, get(asts, "badval", 99.999), Float64(get(asts, "minerr", 0.0)), Float64(get(asts, "maxerr", Inf)), false, output_path)
         pushfirst!(models, (filters=ast_filters, model=model))

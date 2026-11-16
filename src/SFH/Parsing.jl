@@ -294,9 +294,12 @@ function parse_filter_models(dict)
         end
         mag = Float64.(d["mag"])
         snr = haskey(d, "snr") ? Float64.(d["snr"]) : snr_magerr.(Float64.(d["mag_err"]))
+        # `completeness` is either a list tabulated at `mag` or a mapping of erf-model parameters
         c = get(d, "completeness", OrderedDict())
+        completeness = c isa AbstractVector ? Float64.(c) : nothing
+        isnothing(completeness) || (c = OrderedDict()) # Safeguards `get(c, ...)` calls below
         bias = haskey(d, "bias") ? Float64.(d["bias"]) : nothing
-        models[name] = (mag=mag, snr=snr, bias=bias, minerr=Float64(get(d, "minerr", 0.0)), snr50=Float64(get(c, "snr50", 5.0)), width=Float64(get(c, "width", 1.0)))
+        models[name] = (mag=mag, snr=snr, bias=bias, completeness=completeness, minerr=Float64(get(d, "minerr", 0.0)), snr50=Float64(get(c, "snr50", 5.0)), width=Float64(get(c, "width", 1.0)))
     end
     return models
 end
